@@ -1,7 +1,7 @@
 {
-  "name": "openclaw",
+  "name": "goodteams",
   "version": "2026.1.30",
-  "description": "WhatsApp gateway CLI (Baileys web) with Pi RPC agent",
+  "description": "GoodTeams - AI-powered team collaboration platform with multi-channel messaging",
   "keywords": [],
   "license": "MIT",
   "author": "",
@@ -88,6 +88,11 @@
     "build": "pnpm canvas:a2ui:bundle && tsc -p tsconfig.json --noEmit false && node --import tsx scripts/canvas-a2ui-copy.ts && node --import tsx scripts/copy-hook-metadata.ts && node --import tsx scripts/write-build-info.ts",
     "canvas:a2ui:bundle": "bash scripts/bundle-a2ui.sh",
     "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx src/platform/db/seed.ts",
     "dev": "node scripts/run-node.mjs",
     "docs:bin": "node scripts/build-docs-list.mjs",
     "docs:build": "cd docs && pnpm dlx --reporter append-only mint broken-links",
@@ -150,6 +155,7 @@
     "ui:install": "node scripts/ui.js install"
   },
   "dependencies": {
+    "@prisma/client": "^6.9.0",
     "@agentclientprotocol/sdk": "0.13.1",
     "@aws-sdk/client-bedrock": "^3.980.0",
     "@buape/carbon": "0.14.0",
@@ -203,6 +209,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "prisma": "^6.9.0",
     "@grammyjs/types": "^3.23.0",
     "@lit-labs/signals": "^0.2.0",
     "@lit/context": "^1.1.6",
@@ -258,6 +265,10 @@
       "protobufjs",
       "sharp"
     ]
+  },
+  "prisma": {
+    "schema": "src/platform/db/schema.prisma",
+    "seed": "tsx src/platform/db/seed.ts"
   },
   "vitest": {
     "coverage": {

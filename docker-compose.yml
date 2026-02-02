@@ -1,45 +1,75 @@
 services:
-  openclaw-gateway:
-    image: ${OPENCLAW_IMAGE:-openclaw:local}
+  # PostgreSQL database for GoodTeams
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: goodteams
+      POSTGRES_PASSWORD: goodteams
+      POSTGRES_DB: goodteams
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goodteams -d goodteams"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  goodteams-gateway:
+    image: ${GOODTEAMS_IMAGE:-goodteams:local}
     environment:
       HOME: /home/node
       TERM: xterm-256color
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      DATABASE_URL: postgresql://goodteams:goodteams@postgres:5432/goodteams
+      GOODTEAMS_GATEWAY_TOKEN: ${GOODTEAMS_GATEWAY_TOKEN}
+      # Legacy env vars (still supported by underlying openclaw CLI)
+      OPENCLAW_GATEWAY_TOKEN: ${GOODTEAMS_GATEWAY_TOKEN}
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
     volumes:
-      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
-      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${GOODTEAMS_CONFIG_DIR:-./config}:/home/node/.openclaw
+      - ${GOODTEAMS_WORKSPACE_DIR:-./workspace}:/home/node/.openclaw/workspace
     ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+      - "${GOODTEAMS_GATEWAY_PORT:-18789}:18789"
+      - "${GOODTEAMS_BRIDGE_PORT:-18790}:18790"
     init: true
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     command:
       [
         "node",
         "dist/index.js",
         "gateway",
         "--bind",
-        "${OPENCLAW_GATEWAY_BIND:-lan}",
+        "${GOODTEAMS_GATEWAY_BIND:-lan}",
         "--port",
         "18789",
       ]
 
-  openclaw-cli:
-    image: ${OPENCLAW_IMAGE:-openclaw:local}
+  goodteams-cli:
+    image: ${GOODTEAMS_IMAGE:-goodteams:local}
     environment:
       HOME: /home/node
       TERM: xterm-256color
       BROWSER: echo
+      DATABASE_URL: postgresql://goodteams:goodteams@postgres:5432/goodteams
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
     volumes:
-      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
-      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${GOODTEAMS_CONFIG_DIR:-./config}:/home/node/.openclaw
+      - ${GOODTEAMS_WORKSPACE_DIR:-./workspace}:/home/node/.openclaw/workspace
     stdin_open: true
     tty: true
     init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
     entrypoint: ["node", "dist/index.js"]
+
+volumes:
+  postgres_data:

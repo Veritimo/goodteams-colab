@@ -1,0 +1,203 @@
+// GoodTeams Platform Database Schema
+// PostgreSQL + Prisma ORM
+// Reference: docs/IMPLEMENTATION-PLAN-RBAC.md §4.1
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ORGANIZATION
+// =============================================================================
+
+model Organization {
+  id               String    @id @default(uuid())
+  name             String
+  externalTenantId String?   @unique // Entra Tenant ID for SSO
+  status           OrgStatus @default(PENDING)
+
+  // Model configuration
+  authorizedModels Json    @default("[]") // Array of authorized AI model IDs
+  defaultModelId   String?
+
+  // Relations
+  users       User[]
+  invitations OrganizationInvitation[]
+  skills      OrganizationSkill[]
+  auditLogs   AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([externalTenantId])
+  @@index([status])
+}
+
+// =============================================================================
+// USER
+// =============================================================================
+
+model User {
+  id       String   @id @default(uuid())
+  email    String   @unique
+  username String?
+  role     UserRole @default(USER)
+
+  // External identity (Entra Object ID)
+  externalId String?
+
+  // Organization membership
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  // Permissions (beyond role-based)
+  permissions UserPermission[]
+
+  // Invitations issued by this user
+  issuedInvitations OrganizationInvitation[] @relation("InvitationIssuer")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([externalId])
+  @@index([email])
+}
+
+// =============================================================================
+// ORGANIZATION INVITATION
+// =============================================================================
+
+model OrganizationInvitation {
+  id        String           @id @default(uuid())
+  email     String
+  role      UserRole
+  token     String           @unique
+  status    InvitationStatus @default(PENDING)
+  expiresAt DateTime
+
+  // Entra metadata (pre-populated from directory search)
+  externalId       String?
+  entraUsername    String?
+  entraDisplayName String?
+
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  issuerId       String
+  issuer         User         @relation("InvitationIssuer", fields: [issuerId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([email, organizationId])
+  @@index([token])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// =============================================================================
+// USER PERMISSION
+// =============================================================================
+
+model UserPermission {
+  id     String @id @default(uuid())
+  name   String // Permission name (e.g., CRM_CREATE, SQL_EXECUTE)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  grantedAt DateTime @default(now())
+  grantedBy String? // User ID who granted this permission
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+// =============================================================================
+// ORGANIZATION SKILL
+// =============================================================================
+
+model OrganizationSkill {
+  id        String  @id @default(uuid())
+  skillId   String // Unique skill identifier
+  name      String
+  version   String
+  isEnabled Boolean @default(true)
+
+  // Skill configuration (JSON blob)
+  config       Json @default("{}")
+  allowedRoles Json @default("[\"ADMIN\", \"USER\"]") // Which roles can use this skill
+
+  // Organization relation
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  installedAt DateTime @default(now())
+  installedBy String // User ID who installed the skill
+  updatedAt   DateTime @updatedAt
+
+  @@unique([organizationId, skillId])
+  @@index([organizationId])
+  @@index([skillId])
+}
+
+// =============================================================================
+// AUDIT LOG
+// =============================================================================
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Actor information
+  actorId   String
+  actorRole UserRole
+
+  // Action details
+  action     String // e.g., "user.role.changed", "invitation.created"
+  targetType String // e.g., "user", "invitation", "skill"
+  targetId   String?
+  details    Json // Additional context
+
+  // Request metadata
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([actorId])
+  @@index([action])
+  @@index([targetType, targetId])
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  SUPER_ADMIN // Platform-wide admin
+  ADMIN // Organization admin
+  USER // Regular user
+  BILLING // Billing-only access
+  VIEWER // Read-only access
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum OrgStatus {
+  PENDING // Awaiting Entra connection
+  ACTIVE // Fully operational
+  SUSPENDED // Temporarily disabled
+  ARCHIVED // Soft-deleted
+}
