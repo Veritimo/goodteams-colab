@@ -1185,6 +1185,39 @@ The Desktop Agent extends GoodTeams beyond browser and API automation to control
 
 See [DESKTOP-AGENT-ARCHITECTURE.md](./DESKTOP-AGENT-ARCHITECTURE.md) for complete technical specification.
 
+#### Phase 8: Colab — Collaborative Knowledge Work (Weeks 67-82)
+**Goal:** Port the artifact-centric collaboration system from goodteams-ai
+
+| Task | Effort | Priority |
+|------|--------|----------|
+| Port artifact/block model to TypeScript | 2 weeks | P0 |
+| Implement PREE execution engine (Plan→Research→Execute→Evaluate) | 3 weeks | P0 |
+| Build tripane Inspector UI (Context/Stage/Control) | 3 weeks | P0 |
+| Integrate with OpenClaw sessions and tools | 2 weeks | P0 |
+| Block-level accept/reject with semantic diff | 2 weeks | P0 |
+| Colab-specific tools (clarify, propose_plan, draft_content, evaluate) | 2 weeks | P1 |
+| SSE event streaming for real-time updates | 2 weeks | P1 |
+
+**Deliverable:** Artifact-centric collaboration UI where AI drives and humans review/steer
+
+#### Phase 9: Visual Workflow Automation (Weeks 83-94)
+**Goal:** Build visual workflow designer on OpenClaw's existing primitives (cron, hooks, webhooks, plugins)
+
+| Task | Effort | Priority |
+|------|--------|----------|
+| Workflow data model and persistence (PostgreSQL) | 2 weeks | P0 |
+| React Flow visual designer (node palette, canvas, connections) | 2 weeks | P0 |
+| Core nodes: Trigger, Agent, Condition, Communication | 2 weeks | P0 |
+| Execution engine with job queue and error handling | 2 weeks | P0 |
+| Advanced nodes: Iterator, SQL Generator/Executor, Tool | 2 weeks | P0 |
+| New triggers: Email watcher (Graph API), SharePoint file watcher | 2 weeks | P1 |
+| Execution history, logs, and debugging UI | 2 weeks | P1 |
+| Builder Agent (AI creates workflows from natural language) | 2 weeks | P2 |
+
+**Architecture note:** Build ON OpenClaw primitives — Trigger nodes use cron/webhooks, Agent nodes use isolated sessions, Tool nodes use existing tool registry.
+
+**Deliverable:** Full visual workflow automation system with execution history
+
 ### 7.2 Technical Decisions
 
 #### Architecture Decisions
@@ -1282,6 +1315,7 @@ CI/CD:           GitHub Actions → ArgoCD
 |----------------|---------|
 | `packages/desktop-agent/` | Windows desktop agent (Electron) |
 | `docs/DESKTOP-AGENT-ARCHITECTURE.md` | Desktop agent technical specification |
+| `docs/GOODTEAMS-AI-GAP-ANALYSIS.md` | Gap analysis between goodteams-ai and OpenClaw |
 
 ### Key Files to Remove
 
@@ -1433,6 +1467,25 @@ type GoodTeamsEnterpriseConfig = OpenClawConfig & {
 - [ ] Enterprise deployment (GPO support)
 - [ ] Performance benchmarks passing
 
+### Colab Checklist
+- [ ] Artifact/block model ported to TypeScript
+- [ ] PREE execution engine (Plan→Research→Execute→Evaluate)
+- [ ] Tripane Inspector UI (Context/Stage/Control)
+- [ ] OpenClaw sessions and tools integration
+- [ ] Block-level accept/reject with semantic diff
+- [ ] Colab-specific tools (clarify, propose_plan, draft_content, evaluate)
+- [ ] SSE event streaming for real-time updates
+
+### Visual Workflow Automation Checklist
+- [ ] Workflow data model and persistence (PostgreSQL)
+- [ ] React Flow visual designer (node palette, canvas, connections)
+- [ ] Core nodes: Trigger, Agent, Condition, Communication
+- [ ] Execution engine with job queue and error handling
+- [ ] Advanced nodes: Iterator, SQL Generator/Executor, Tool
+- [ ] New triggers: Email watcher (Graph API), SharePoint file watcher
+- [ ] Execution history, logs, and debugging UI
+- [ ] Builder Agent (AI creates workflows from natural language)
+
 ---
 
 ## Appendix D: Desktop Agent Architecture
@@ -1482,7 +1535,24 @@ The Desktop Agent is a Windows-first Electron application that extends GoodTeams
 | D3: Visual Collaboration | 4 weeks | Overlay, streaming |
 | D4: Enterprise | 4 weeks | Security, deployment |
 
-**Total:** ~18 weeks (4.5 months)
+**Desktop Agent Total:** ~18 weeks (4.5 months)
+
+### Full Project Timeline
+
+| Phase | Weeks | Focus |
+|-------|-------|-------|
+| Phase 0: Foundation | 1-4 | Clean enterprise codebase |
+| Phase 1: Security Foundation | 5-10 | SSO, RBAC, audit |
+| Phase 2: Microsoft 365 | 11-18 | MS Graph, SharePoint, Outlook |
+| Phase 3: Google Workspace | 19-24 | Drive, Gmail, Calendar |
+| Phase 4: Database & CRM | 25-32 | SQL Server, PostgreSQL, Salesforce |
+| Phase 5: Multi-Tenancy | 33-40 | SaaS architecture |
+| Phase 6: Enterprise Features | 41-48 | Compliance, DLP |
+| Phase 7: Desktop Agent | 49-66 | Windows automation, visual collab |
+| Phase 8: Colab | 67-82 | Artifact-centric collaboration |
+| Phase 9: Visual Workflow | 83-94 | Workflow designer & automation |
+
+**Total Project Duration:** ~94 weeks (~22 months)
 
 For complete technical specification including component design, security model, and implementation details, see:
 
