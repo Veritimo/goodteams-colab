@@ -9,6 +9,7 @@
  *   - api: Platform REST API
  *   - auth: Authentication and authorization (Phase 2)
  *   - audit: Audit logging utilities (Phase 2)
+ *   - tenant: Multi-tenancy config and credentials (Phase 3)
  */
 
 // Database
@@ -21,11 +22,7 @@ export {
   PlatformError,
   sendError,
 } from "./api/index.js";
-export type {
-  RequestContext,
-  PlatformErrorCode,
-  PlatformErrorResponse,
-} from "./api/index.js";
+export type { RequestContext, PlatformErrorCode, PlatformErrorResponse } from "./api/index.js";
 
 // Auth (stub for Phase 2)
 export { AUTH_MODULE_VERSION } from "./auth/index.js";
@@ -58,3 +55,77 @@ export type {
   PaginatedAuditLogs,
   ExportFormat,
 } from "./audit/index.js";
+
+// Tenant - Config & Credentials
+export {
+  generateTenantConfig,
+  generateTenantToken,
+  writeConfigToFile,
+  generateAndWriteConfig,
+  getConfigPath,
+  getTenantBasePath,
+  setCredential,
+  getCredential,
+  deleteCredential,
+  listCredentialKeys,
+  rotateCredential,
+  hasCredential,
+  deleteAllCredentials,
+  getEncryptionKey,
+  CredentialKeyMissingError,
+  CredentialDecryptionError,
+} from "./tenant/index.js";
+
+// Tenant - Gateway Manager
+export {
+  spawnGateway,
+  stopGateway,
+  restartGateway,
+  getGatewayProcess,
+  getGatewayStatus,
+  sendSignal,
+  isGatewayRunning,
+  getRunningGatewayIds,
+  stopAllGateways,
+} from "./tenant/index.js";
+
+// Tenant - Health Monitor
+export {
+  startHealthMonitor,
+  stopHealthMonitor,
+  isHealthMonitorRunning,
+  checkGatewayHealth,
+  triggerHealthCheck,
+  getBackoffInfo,
+  clearBackoff,
+} from "./tenant/index.js";
+
+// Tenant - Router
+export {
+  extractSubdomain,
+  getOrganizationBySlug,
+  getTenantGateway,
+  resolveTenant,
+  tenantContextMiddleware,
+  createTenantProxy,
+  getTenantContext,
+  TENANT_ID_HEADER,
+} from "./tenant/index.js";
+
+// Tenant - Port Allocator
+export { PortAllocator, createPortAllocator, PORT_RANGE, TOTAL_PORTS } from "./tenant/index.js";
+
+// Tenant - WebSocket Proxy
+export { setupWebSocketProxy } from "./tenant/index.js";
+
+// Tenant Types
+export type {
+  GeneratedConfig,
+  GatewayProcess,
+  GatewayInfo,
+  GatewayStatus,
+  PortAllocatorOptions,
+  AllocatedPort,
+  TenantContext,
+  TenantRequest,
+} from "./tenant/index.js";

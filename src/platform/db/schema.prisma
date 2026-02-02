@@ -31,6 +31,11 @@ model Organization {
   skills      OrganizationSkill[]
   auditLogs   AuditLog[]
 
+  // Tenant management relations
+  gateway     TenantGateway?
+  config      TenantConfig?
+  credentials TenantCredential[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -200,4 +205,88 @@ enum OrgStatus {
   ACTIVE // Fully operational
   SUSPENDED // Temporarily disabled
   ARCHIVED // Soft-deleted
+}
+
+enum GatewayStatus {
+  PROVISIONING // Being set up
+  STARTING // Process starting
+  HEALTHY // Running and healthy
+  UNHEALTHY // Running but failing health checks
+  STOPPING // Gracefully stopping
+  STOPPED // Gracefully stopped
+  FAILED // Unexpected failure
+}
+
+// =============================================================================
+// TENANT GATEWAY
+// =============================================================================
+
+model TenantGateway {
+  id             String        @id @default(uuid())
+  organizationId String        @unique
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  port   Int           @unique
+  pid    Int?
+  status GatewayStatus @default(PROVISIONING)
+
+  lastHealthCheck     DateTime?
+  consecutiveFailures Int       @default(0)
+
+  memoryMb       Int?
+  cpuPercent     Float?
+  activeSessions Int    @default(0)
+
+  configPath    String
+  statePath     String
+  workspacePath String
+
+  startedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([status])
+  @@index([port])
+}
+
+// =============================================================================
+// TENANT CONFIG
+// =============================================================================
+
+model TenantConfig {
+  id             String       @id @default(uuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  model        String  @default("anthropic/claude-sonnet-4-20250514")
+  agentName    String  @default("Assistant")
+  systemPrompt String?
+  features     Json    @default("{}")
+
+  maxTokensPerDay       Int @default(50000)
+  maxConcurrentSessions Int @default(5)
+  maxMemoryMb           Int @default(256)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =============================================================================
+// TENANT CREDENTIAL
+// =============================================================================
+
+model TenantCredential {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  key            String
+  encryptedValue String
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  rotatedAt DateTime?
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
 }
