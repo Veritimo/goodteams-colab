@@ -1106,7 +1106,15 @@ See [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth
 | SharePoint/OneDrive tools | 2 weeks | P0 |
 | Outlook email/calendar tools | 2 weeks | P0 |
 | MS Teams channel enhancement | 1 week | P0 |
+| Teams meeting transcript tool (OnlineMeetingTranscript API) | 1 week | P1 |
 | Document generation (PPTX, XLSX, DOCX) | 1 week | P1 |
+| Meeting summary & action item extraction | 0.5 weeks | P2 |
+
+**MS Teams as Primary Enterprise Channel:**
+MS Teams is intended to be the **primary enterprise communication channel** for GoodTeams — the same role WhatsApp/Telegram play in personal OpenClaw. This includes:
+- **Chat** — DMs, group chats, and channel conversations
+- **Meeting transcripts** — Knowledge capture from Teams meetings for context and follow-up
+- **File sharing** — Via SharePoint integration (Teams files are SharePoint-backed)
 
 **Required Permissions (Delegated):**
 - `User.Read` — Basic user profile
@@ -1115,8 +1123,10 @@ See [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth
 - `Calendars.Read` — Outlook calendar access
 - `Mail.ReadWrite` — Email read and write
 - `Mail.Send` — Send email on behalf of user
+- `OnlineMeetings.Read` — Read user's meetings
+- `OnlineMeetingTranscript.Read.All` — Read meeting transcripts
 
-**Deliverable:** Full Microsoft 365 productivity integration
+**Deliverable:** Full Microsoft 365 productivity integration with MS Teams as the enterprise communication hub
 
 #### Phase 3: Google Workspace Integration (Weeks 19-24)
 **Goal:** Full Google ecosystem support
