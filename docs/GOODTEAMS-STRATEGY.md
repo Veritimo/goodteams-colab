@@ -31,6 +31,7 @@ OpenClaw is a mature, well-architected personal AI assistant with sophisticated 
    - [Appendix C: Migration Checklist](#appendix-c-migration-checklist)
    - [Appendix D: Desktop Agent Architecture](#appendix-d-desktop-agent-architecture)
    - [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth-architecture)
+   - [Appendix F: Google Workspace Auth Architecture](#appendix-f-google-workspace-auth-architecture)
 
 ---
 
@@ -1079,6 +1080,8 @@ type TenantConfig = OpenClawConfig & {
 | Build RBAC system | 2 weeks | P0 |
 | Create audit logging infrastructure | 1 week | P0 |
 
+**Token Storage Note:** The encrypted vault infrastructure supports credentials for BOTH Microsoft 365 (Entra ID tokens) and Google Workspace (OAuth tokens + service account keys). This shared foundation enables Phase 2 (Microsoft) and Phase 3 (Google) integrations.
+
 **SaaS Authentication Model:**
 GoodTeams uses a **multi-tenant Entra ID (Azure AD) application** — the canonical SaaS pattern:
 - **Developer registers app once** in their own Entra tenant (multi-tenant enabled)
@@ -1118,15 +1121,41 @@ See [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth
 #### Phase 3: Google Workspace Integration (Weeks 19-24)
 **Goal:** Full Google ecosystem support
 
+**Dependency:** Requires Phase 1 auth infrastructure (token storage vault, OAuth callback framework, user credential schema)
+
 | Task | Effort | Priority |
 |------|--------|----------|
-| Google Workspace connector | 1 week | P0 |
-| Drive/Docs/Sheets/Slides tools | 2 weeks | P0 |
-| Gmail tools | 1 week | P0 |
+| OAuth consent screen & client setup | 0.5 weeks | P0 |
+| User authorization code flow | 1 week | P0 |
+| Token refresh service | 0.5 weeks | P0 |
+| Service account + domain-wide delegation setup | 1 week | P0 |
+| Google Drive connector plugin | 2 weeks | P0 |
+| Gmail tools (read, send, search) | 1.5 weeks | P0 |
 | Google Calendar tools | 1 week | P0 |
-| Google Chat enhancement | 1 week | P1 |
+| Google Docs/Sheets/Slides read access | 1 week | P1 |
+| Google Chat channel enhancement | 1 week | P1 |
 
-**Deliverable:** Full Google Workspace productivity integration
+**Two Authentication Patterns:**
+
+| Pattern | Use Case | Description |
+|---------|----------|-------------|
+| **User OAuth** | Individual consent | Standard OAuth 2.0 flow — user authorizes access to their data |
+| **Domain-wide Delegation** | Enterprise background access | Service account impersonates any user in the domain |
+
+**Domain-wide Delegation Note:** This is MORE powerful than Microsoft's admin consent model. With Microsoft, admin consent grants the *app* access to tenant resources, but users still authenticate. With Google, the service account can impersonate ANY domain user without their individual consent — enabling true background automation.
+
+**Required Scopes:**
+
+| Scope | Purpose |
+|-------|---------|
+| `openid`, `email`, `profile` | User identity |
+| `drive.readonly`, `drive.file` | Google Drive access |
+| `gmail.readonly`, `gmail.send` | Email read and send |
+| `calendar.readonly`, `calendar.events` | Calendar access |
+
+See [Appendix F: Google Workspace Auth Architecture](#appendix-f-google-workspace-auth-architecture) for full specification.
+
+**Deliverable:** Full Google Workspace productivity integration with dual auth model
 
 #### Phase 4: Database & CRM (Weeks 25-32)
 **Goal:** Enterprise data access with intelligent query building
@@ -1658,6 +1687,87 @@ For complete details including:
 - Environment variables
 
 See: **[MICROSOFT-365-AUTH-ARCHITECTURE.md](./MICROSOFT-365-AUTH-ARCHITECTURE.md)**
+
+---
+
+## Appendix F: Google Workspace Auth Architecture
+
+GoodTeams uses **Google Cloud OAuth 2.0** with optional **Domain-wide Delegation** to integrate with Google Workspace. This mirrors the Microsoft 365 pattern with Google-specific implementations.
+
+### Architecture Summary
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Customer Enterprise                             │
+│                                                                      │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐            │
+│  │    Users      │  │  Google Drive │  │     Gmail     │            │
+│  │ (Google IDs)  │  │  Docs/Sheets  │  │   Calendar    │            │
+│  └───────┬───────┘  └───────┬───────┘  └───────┬───────┘            │
+│          └──────────────────┼──────────────────┘                     │
+│                       Google APIs                                    │
+└─────────────────────────────┼────────────────────────────────────────┘
+                              │
+               ┌──────────────┴──────────────┐
+               │                             │
+     ┌─────────▼─────────┐        ┌─────────▼─────────┐
+     │  Domain-wide      │        │   User OAuth      │
+     │  Delegation       │        │   (Consent)       │
+     │  (Service Acct)   │        │                   │
+     └─────────┬─────────┘        └─────────┬─────────┘
+               └──────────────┬──────────────┘
+                              │
+┌─────────────────────────────▼────────────────────────────────────────┐
+│                      GoodTeams Platform                               │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │                 Google Cloud OAuth Client                        │ │
+│  │                                                                  │ │
+│  │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐   │ │
+│  │  │ Service Acct    │ │ Auth Code Flow  │ │ Token Refresh   │   │ │
+│  │  │ Impersonation   │ │ (User consent)  │ │ (Auto-refresh)  │   │ │
+│  │  └─────────────────┘ └─────────────────┘ └─────────────────┘   │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Two Authentication Flows
+
+| Flow | Purpose | Trigger |
+|------|---------|---------|
+| **User OAuth** | Get delegated access to individual user's data | User clicks "Link Google Account" |
+| **Domain-wide Delegation** | Background access to any user in domain | Admin configures in Google Admin Console |
+
+### Key Difference from Microsoft
+
+**Microsoft:** Admin consent grants the *app* access to the tenant. Users still authenticate individually.
+
+**Google:** Domain-wide delegation grants a *service account* the ability to **impersonate any user** in the domain. No user authentication needed for background operations. This is more powerful — the service account can access any domain user's Drive, Gmail, Calendar without individual consent.
+
+### Key Capabilities
+
+- **Google Drive API** — Files, Docs, Sheets, Slides
+- **Gmail API** — Email read, send, search
+- **Calendar API** — Events, availability
+- **Delegated + Impersonation** — Both consent-based and service account flows
+
+### Security Considerations
+
+- **Service account keys stored in vault** — Never in database
+- **Key rotation** — Generate new keys periodically
+- **Scope minimization** — Only grant necessary scopes in Admin Console
+- **Domain verification** — Verify user email domain matches organization
+
+### Full Specification
+
+For complete details including:
+- User OAuth and domain-wide delegation flow implementation
+- OAuth client and service account configuration
+- Token storage and refresh patterns
+- Scope reference for Drive, Gmail, Calendar, Docs
+- Security considerations
+
+See: **[GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md](./GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md)**
 
 ---
 
