@@ -1,12 +1,15 @@
 # RBAC & Staff Onboarding — Implementation Plan
 
-> Building the Platform Layer into GoodTeams-Colab (OpenClaw Fork)
+> **⚠️ This document is superseded by [IMPLEMENTATION-PLAN-MASTER.md](./IMPLEMENTATION-PLAN-MASTER.md)**
+> 
+> RBAC is covered in **Phase 2: Security Foundation** of the master plan.
+> This document is retained for detailed reference on RBAC-specific implementation.
 
 **Version:** 2.0  
-**Status:** Planning  
+**Status:** Superseded (see Master Plan)  
 **Created:** February 2026  
 **Spec Reference:** [RBAC-STAFF-ONBOARDING.md](./RBAC-STAFF-ONBOARDING.md)  
-**Strategy Reference:** [GOODTEAMS-STRATEGY.md](./GOODTEAMS-STRATEGY.md) — Phase 1 (Security Foundation)
+**Master Plan:** [IMPLEMENTATION-PLAN-MASTER.md](./IMPLEMENTATION-PLAN-MASTER.md) — Phase 2
 
 ---
 
