@@ -12,6 +12,7 @@ import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import { handleA2uiHttpRequest } from "../canvas-host/a2ui.js";
 import { loadConfig } from "../config/config.js";
+import { createPlatformApiHandler } from "../platform/api/index.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
 import { handleControlUiAvatarRequest, handleControlUiHttpRequest } from "./control-ui.js";
 import { applyHookMappings } from "./hooks-mapping.js";
@@ -233,6 +234,9 @@ export function createGatewayHttpServer(opts: {
         void handleRequest(req, res);
       });
 
+  // Create platform API handler
+  const handlePlatformRequest = createPlatformApiHandler();
+
   async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     // Don't interfere with WebSocket upgrades; ws handles the 'upgrade' event.
     if (String(req.headers.upgrade ?? "").toLowerCase() === "websocket") {
@@ -243,6 +247,10 @@ export function createGatewayHttpServer(opts: {
       const configSnapshot = loadConfig();
       const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
       if (await handleHooksRequest(req, res)) {
+        return;
+      }
+      // Platform API - enterprise management endpoints
+      if (await handlePlatformRequest(req, res)) {
         return;
       }
       if (
