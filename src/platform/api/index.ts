@@ -12,6 +12,9 @@ import { handleHealth } from "./routes/health.js";
 import { handleOrg } from "./routes/org.js";
 import { handleUsers } from "./routes/users.js";
 import { handleInvitations } from "./routes/invitations.js";
+import { handlePermissions } from "./routes/permissions.js";
+import { handleAudit } from "./routes/audit.js";
+import { handleAuth } from "./routes/auth.js";
 
 /**
  * Platform API base path
@@ -36,6 +39,9 @@ const routes: Route[] = [
   { pattern: "/org", handler: handleOrg },
   { pattern: "/users", handler: handleUsers },
   { pattern: "/invitations", handler: handleInvitations },
+  { pattern: "/permissions", handler: handlePermissions },
+  { pattern: "/audit", handler: handleAudit },
+  { pattern: "/auth", handler: handleAuth },
 ];
 
 /**

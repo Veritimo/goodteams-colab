@@ -1,63 +1,82 @@
 /**
  * Platform Audit Logging Module
  *
- * Placeholder for Phase 2 implementation.
+ * Comprehensive audit logging system for GoodTeams platform.
+ * Provides structured audit event logging, querying, and export capabilities.
  *
- * This module will provide:
- * - Structured audit event logging
- * - Audit log storage (database)
- * - Audit log queries and filters
- * - Compliance reporting
+ * Usage:
+ *   import { logAudit, AUDIT_ACTIONS, queryAuditLogs } from '@/platform/audit';
+ *
+ *   // Log an audit event
+ *   await logAudit(ctx, AUDIT_ACTIONS.USER_ROLE_CHANGED, 'user', userId, {
+ *     previousRole: 'member',
+ *     newRole: 'admin',
+ *   });
+ *
+ *   // Query audit logs
+ *   const logs = await queryAuditLogs({
+ *     organizationId: 'org-123',
+ *     action: 'user.*',
+ *     limit: 50,
+ *   });
  *
  * See: docs/AUDIT-LOGGING-SPEC.md
  */
 
-export const AUDIT_MODULE_VERSION = "0.0.0-stub";
+export const AUDIT_MODULE_VERSION = "1.0.0";
 
-/**
- * Audit event types (for reference during Phase 2 implementation)
- */
-export type AuditEventType =
-  // Authentication events
-  | "auth.login"
-  | "auth.logout"
-  | "auth.login_failed"
-  | "auth.token_refresh"
-  // User management events
-  | "user.created"
-  | "user.updated"
-  | "user.deleted"
-  | "user.role_changed"
-  // Organization events
-  | "org.settings_updated"
-  // Invitation events
-  | "invitation.created"
-  | "invitation.accepted"
-  | "invitation.revoked"
-  | "invitation.expired";
+// Logger
+export {
+  logAudit,
+  logSystemAudit,
+  logAuditBatch,
+  getAuditLogById,
+  type AuditContext,
+  type SystemAuditContext,
+  type LogAuditOptions,
+} from "./logger.js";
 
-/**
- * Audit log entry structure (for reference)
- */
-export interface AuditLogEntry {
-  id: string;
-  timestamp: Date;
-  eventType: AuditEventType;
-  actorId: string | null;
-  actorEmail: string | null;
-  targetType: "user" | "org" | "invitation" | "session" | null;
-  targetId: string | null;
-  orgId: string;
-  ip: string;
-  userAgent: string | null;
-  details: Record<string, unknown>;
-}
+// Actions
+export {
+  AUDIT_ACTIONS,
+  TARGET_TYPES,
+  RISK_LEVELS,
+  ACTION_RISK_LEVELS,
+  type AuditAction,
+  type TargetType,
+  type RiskLevel,
+} from "./actions.js";
 
-/**
- * Log an audit event
- *
- * STUB: Does nothing in Phase 1. Will write to database in Phase 2.
- */
-export async function logAudit(_entry: Omit<AuditLogEntry, "id" | "timestamp">): Promise<void> {
-  // TODO Phase 2: Implement audit logging to database
-}
+// Query
+export {
+  queryAuditLogs,
+  queryAuditLogsPaginated,
+  countAuditLogs,
+  getAuditStats,
+  getUserActivity,
+  getResourceActivity,
+  getHighRiskEvents,
+  type AuditQueryParams,
+  type PaginatedAuditLogs,
+  type AuditStats,
+} from "./query.js";
+
+// Context
+export {
+  createAuditContext,
+  createAuditContextFromUser,
+  extractClientIp,
+  sanitizeUserAgent,
+  hasAuditContext,
+} from "./context.js";
+
+// Export
+export {
+  exportAuditLogs,
+  auditLogsToCsv,
+  auditLogsToJson,
+  getExportContentType,
+  getExportFilename,
+  streamAuditExport,
+  type ExportFormat,
+} from "./export.js";

@@ -30,6 +30,31 @@ export type {
 // Auth (stub for Phase 2)
 export { AUTH_MODULE_VERSION } from "./auth/index.js";
 
-// Audit (stub for Phase 2)
-export { AUDIT_MODULE_VERSION, logAudit } from "./audit/index.js";
-export type { AuditEventType, AuditLogEntry } from "./audit/index.js";
+// Audit
+export {
+  AUDIT_MODULE_VERSION,
+  logAudit,
+  logSystemAudit,
+  logAuditBatch,
+  getAuditLogById,
+  AUDIT_ACTIONS,
+  TARGET_TYPES,
+  RISK_LEVELS,
+  queryAuditLogs,
+  queryAuditLogsPaginated,
+  countAuditLogs,
+  getAuditStats,
+  createAuditContext,
+  createAuditContextFromUser,
+  exportAuditLogs,
+} from "./audit/index.js";
+export type {
+  AuditContext,
+  SystemAuditContext,
+  AuditAction,
+  TargetType,
+  RiskLevel,
+  AuditQueryParams,
+  PaginatedAuditLogs,
+  ExportFormat,
+} from "./audit/index.js";
