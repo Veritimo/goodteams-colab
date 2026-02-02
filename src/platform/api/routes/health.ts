@@ -82,5 +82,5 @@ export const handleHealth: RouteHandler = async (
     ...(checks && { checks }),
   };
 
-  sendJson(res, 200, response);
+  sendJson(res, response, 200);
 };

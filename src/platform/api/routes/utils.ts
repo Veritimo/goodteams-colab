@@ -4,6 +4,10 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RequestContext } from "../middleware/context.js";
+import { sendError as _sendError } from "../middleware/errors.js";
+
+// Re-export sendError from errors middleware
+export { sendError } from "../middleware/errors.js";
 
 /**
  * Route handler function signature
@@ -15,12 +19,40 @@ export type RouteHandler = (
 ) => Promise<void>;
 
 /**
- * Send JSON response
+ * Send JSON response with status code
  */
-export function sendJson(res: ServerResponse, status: number, body: unknown): void {
+export function sendJsonWithStatus(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify(body));
+}
+
+/**
+ * Send JSON response (defaults to 200 OK)
+ */
+export function sendJson(res: ServerResponse, body: unknown, status = 200): void {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
+/**
+ * Send redirect response
+ */
+export function redirect(res: ServerResponse, url: string, status = 302): void {
+  res.statusCode = status;
+  res.setHeader("Location", url);
+  res.end();
+}
+
+/**
+ * Parse request body as JSON (alias for readJsonBody)
+ */
+export async function parseBody<T = unknown>(
+  req: IncomingMessage,
+  maxBytes = 1024 * 1024,
+): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  return readJsonBody<T>(req, maxBytes);
 }
 
 /**
@@ -68,10 +100,7 @@ export async function readJsonBody<T = unknown>(
  * Parse URL path parameters
  * e.g., "/api/platform/users/:id" with path "/api/platform/users/123" returns { id: "123" }
  */
-export function parsePathParams(
-  pattern: string,
-  path: string,
-): Record<string, string> | null {
+export function parsePathParams(pattern: string, path: string): Record<string, string> | null {
   const patternParts = pattern.split("/").filter(Boolean);
   const pathParts = path.split("/").filter(Boolean);
 
