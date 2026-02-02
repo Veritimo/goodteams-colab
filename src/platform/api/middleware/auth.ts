@@ -1,15 +1,26 @@
 /**
  * Authentication middleware for platform API
  *
- * STUB: Basic structure for Phase 1. Full implementation in Phase 2 with Entra SSO.
+ * Provides utilities for JWT verification and authentication.
+ * Integrates with the RBAC permission system.
+ *
+ * Phase 2: Basic JWT stub + RBAC integration
+ * Future: Full Entra SSO verification
  */
 
 import type { ServerResponse } from "node:http";
-import type { RequestContext } from "./context.js";
+import type { UserRole } from "@prisma/client";
+import type { RequestContext, RequestUser } from "./context.js";
 import { sendError } from "./errors.js";
+import { getImplicitPermissionsForRole } from "../../auth/permissions.js";
+import {
+  checkPermissionForUser,
+  type PermissionCheckUser,
+} from "../../auth/check-permission.js";
 
 /**
- * Permission types that can be required for endpoints
+ * Legacy permission types (kept for backwards compatibility)
+ * @deprecated Use PERMISSIONS from permissions.ts instead
  */
 export type Permission =
   | "org:read"
@@ -26,9 +37,8 @@ export type Permission =
   | "settings:write";
 
 /**
- * Role-based permission mapping
- *
- * STUB: Will be expanded in Phase 2 based on RBAC-STAFF-ONBOARDING.md
+ * Legacy role-based permission mapping
+ * @deprecated Use getImplicitPermissionsForRole from permissions.ts instead
  */
 const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   owner: [
@@ -62,7 +72,29 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
 };
 
 /**
- * Check if context has a specific permission
+ * Map context role to Prisma UserRole
+ */
+function mapToPrismaRole(role: string): UserRole {
+  switch (role.toLowerCase()) {
+    case "owner":
+      return "ADMIN";
+    case "admin":
+      return "ADMIN";
+    case "member":
+      return "USER";
+    case "viewer":
+      return "VIEWER";
+    case "billing":
+      return "BILLING";
+    case "super_admin":
+      return "SUPER_ADMIN";
+    default:
+      return "USER";
+  }
+}
+
+/**
+ * Check if context has a specific permission (legacy route permissions)
  */
 export function hasPermission(ctx: RequestContext, permission: Permission): boolean {
   if (!ctx.user) {
@@ -70,6 +102,23 @@ export function hasPermission(ctx: RequestContext, permission: Permission): bool
   }
   const rolePerms = ROLE_PERMISSIONS[ctx.user.role] ?? [];
   return rolePerms.includes(permission);
+}
+
+/**
+ * Check if context has a permission using the new RBAC system
+ */
+export function hasRbacPermission(ctx: RequestContext, permission: string): boolean {
+  if (!ctx.user) {
+    return false;
+  }
+
+  const user: PermissionCheckUser = {
+    id: ctx.user.id,
+    role: mapToPrismaRole(ctx.user.role),
+    organizationId: ctx.user.orgId,
+  };
+
+  return checkPermissionForUser(user, ctx.user.permissions ?? [], permission);
 }
 
 /**
@@ -157,4 +206,41 @@ export function requireAnyPermission(
     return false;
   }
   return true;
+}
+
+/**
+ * Create a test JWT token (stub) for development/testing
+ *
+ * Format: "stub:" + base64(JSON user object)
+ *
+ * @param user - User data to encode
+ * @returns Token string that can be used in Authorization header
+ */
+export function createTestToken(user: RequestUser): string {
+  const json = JSON.stringify({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    orgId: user.orgId,
+    role: user.role,
+    permissions: user.permissions ?? [],
+  });
+  return `stub:${Buffer.from(json).toString("base64")}`;
+}
+
+/**
+ * Get all permissions for the authenticated user
+ *
+ * Combines implicit role-based permissions with explicit grants
+ */
+export function getUserAllPermissions(ctx: RequestContext): string[] {
+  if (!ctx.user) {
+    return [];
+  }
+
+  const prismaRole = mapToPrismaRole(ctx.user.role);
+  const implicitPerms = getImplicitPermissionsForRole(prismaRole);
+  const explicitPerms = ctx.user.permissions ?? [];
+
+  return Array.from(new Set([...implicitPerms, ...explicitPerms]));
 }

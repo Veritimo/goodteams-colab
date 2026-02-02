@@ -17,6 +17,8 @@ export interface RequestUser {
   name: string;
   orgId: string;
   role: "owner" | "admin" | "member" | "viewer";
+  /** Explicit permissions granted to this user */
+  permissions?: string[];
 }
 
 /**
@@ -69,14 +71,51 @@ function extractJwt(req: IncomingMessage): string | null {
 /**
  * Verify and decode JWT token
  *
- * STUB: Returns null for Phase 1. Full JWT verification will be implemented in Phase 2.
+ * STUB: For development/testing, accepts a base64-encoded JSON user object.
+ * Production implementation will verify against Entra SSO.
+ *
+ * Format for testing: base64(JSON.stringify({ id, email, name, orgId, role, permissions }))
  */
-function verifyJwt(_token: string): RequestUser | null {
-  // TODO Phase 2: Implement JWT verification with Entra SSO
+function verifyJwt(token: string): RequestUser | null {
+  // TODO Phase 2: Implement full JWT verification with Entra SSO
   // - Verify signature against Entra public keys
   // - Check expiration and audience
   // - Extract user claims
-  return null;
+
+  // STUB: For development/testing, accept base64-encoded JSON
+  // This allows testing without a real JWT infrastructure
+  try {
+    // Check if token looks like a base64 JSON stub (starts with "stub:")
+    if (token.startsWith("stub:")) {
+      const jsonPart = token.slice(5);
+      const decoded = Buffer.from(jsonPart, "base64").toString("utf8");
+      const payload = JSON.parse(decoded) as Partial<RequestUser>;
+
+      // Validate required fields
+      if (
+        typeof payload.id !== "string" ||
+        typeof payload.email !== "string" ||
+        typeof payload.orgId !== "string" ||
+        typeof payload.role !== "string"
+      ) {
+        return null;
+      }
+
+      return {
+        id: payload.id,
+        email: payload.email,
+        name: payload.name ?? payload.email.split("@")[0],
+        orgId: payload.orgId,
+        role: payload.role as RequestUser["role"],
+        permissions: payload.permissions ?? [],
+      };
+    }
+
+    // Future: Real JWT verification would go here
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
