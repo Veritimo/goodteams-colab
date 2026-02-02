@@ -1,303 +1,467 @@
 # RBAC & Staff Onboarding — Implementation Plan
 
-> Phased implementation with checkpoints, testing criteria, and implementation log
+> Building the Platform Layer into GoodTeams-Colab (OpenClaw Fork)
 
-**Version:** 1.0  
+**Version:** 2.0  
 **Status:** Planning  
 **Created:** February 2026  
-**Spec Reference:** [RBAC-STAFF-ONBOARDING.md](./RBAC-STAFF-ONBOARDING.md)
+**Spec Reference:** [RBAC-STAFF-ONBOARDING.md](./RBAC-STAFF-ONBOARDING.md)  
+**Strategy Reference:** [GOODTEAMS-STRATEGY.md](./GOODTEAMS-STRATEGY.md) — Phase 1 (Security Foundation)
 
 ---
 
 ## Table of Contents
 
-1. [Architecture Decision](#1-architecture-decision)
-2. [Prerequisites](#2-prerequisites)
-3. [Phase Overview](#3-phase-overview)
-4. [Phase 1: Database & Core Models](#phase-1-database--core-models)
-5. [Phase 2: Role Enforcement](#phase-2-role-enforcement)
-6. [Phase 3: Invitation System](#phase-3-invitation-system)
-7. [Phase 4: Admin Functions](#phase-4-admin-functions)
-8. [Phase 5: Audit & Polish](#phase-5-audit--polish)
-9. [Testing Strategy](#testing-strategy)
-10. [Implementation Log](#implementation-log)
+1. [Context](#1-context)
+2. [Current State](#2-current-state)
+3. [Target State](#3-target-state)
+4. [Foundation Work](#4-foundation-work)
+5. [Implementation Phases](#5-implementation-phases)
+6. [Testing Strategy](#6-testing-strategy)
+7. [Implementation Log](#7-implementation-log)
 
 ---
 
-## 1. Architecture Decision
+## 1. Context
 
-### Recommendation: Upgrade goodteams-ai
+### What We're Doing
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Upgrade goodteams-ai** ✅ | Already has org/invitation/role patterns, Wasp/Prisma stack mature | May need refactoring of existing code |
-| Build new platform | Clean slate | Duplicates 70% of existing work |
-| Hybrid extraction | Could be leaner | Complex integration, unclear boundaries |
+Transforming **goodteams-colab** (an OpenClaw fork) from a single-user CLI/daemon into an enterprise SaaS platform with multi-tenancy, RBAC, and staff onboarding.
 
-**Decision:** Complete and upgrade `goodteams-ai` as the Platform Layer. The existing codebase has:
-- ✅ Organization model with `externalTenantId`
-- ✅ User roles (`ADMIN`, `USER`, `BILLING`, `SUPER_ADMIN`)
-- ✅ Invitation system with Entra directory search
-- ✅ Authorized models management
-- ⚠️ Partial: Permission system (needs explicit permissions)
-- ❌ Missing: Admin continuity enforcement
-- ❌ Missing: Skill/tool management RBAC
-- ❌ Missing: Complete audit logging
+**NOT** wrapping OpenClaw with a separate platform — building the platform layer INTO the codebase.
 
-### Codebase Mapping
+### Strategy Alignment
 
-| Component | Location | Status |
-|-----------|----------|--------|
-| Organization model | `platform/app/src/organization/` | Exists, needs extension |
-| User roles | `engine/app/core/auth.py` + Prisma | Exists |
-| Invitation system | `platform/app/src/invitation/` | Exists, complete |
-| Entra directory search | `platform/app/src/entra/` | Exists |
-| Authorized models | `platform/app/src/organization/operations.ts` | Exists |
-| Explicit permissions | `engine/app/core/auth.py` | Partial |
-| Skill management | — | Not started |
-| Audit logging | `platform/app/src/organization/operations.ts` | Partial (Logs model) |
+Per [GOODTEAMS-STRATEGY.md](./GOODTEAMS-STRATEGY.md), this falls under:
+- **Phase 1: Security Foundation** (Weeks 5-10) — SSO, RBAC, audit
+- **Phase 5: Multi-Tenancy** (Weeks 33-40) — SaaS architecture
+
+RBAC is foundational for everything else. We build it as part of Phase 1.
+
+### Reference Implementation
+
+[goodteams-ai](file:///Users/dawie/Repos/goodteams_ai) has working patterns for:
+- Organization model with Entra integration
+- Invitation system with directory search
+- Role-based operations
+- Authorized models management
+
+We reference these patterns but implement fresh in goodteams-colab's TypeScript/Node.js stack.
 
 ---
 
-## 2. Prerequisites
+## 2. Current State
 
-### Before Starting
+### What OpenClaw Has
 
-- [ ] **P0**: Verify goodteams-ai runs locally (platform + engine)
-- [ ] **P0**: Ensure Prisma schema is current (`npx prisma db push`)
-- [ ] **P0**: Confirm Entra app registration exists with required scopes
-- [ ] **P1**: Review existing test coverage
-- [ ] **P1**: Set up local test Microsoft tenant (or use existing dev tenant)
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Gateway server | ✅ | WebSocket + HTTP, session management |
+| Agent framework | ✅ | Multi-agent, tools, sessions |
+| Plugin system | ✅ | Extensible architecture |
+| Channel system | ✅ | Telegram, Discord, Slack, Teams, etc. |
+| Config system | ✅ | YAML-based, per-agent |
+| Auth (gateway) | ⚠️ | Token/password/Tailscale — single-user |
+| Memory/storage | ⚠️ | File-based markdown, no DB |
 
-### Environment Requirements
+### What OpenClaw Doesn't Have
 
-```bash
-# Platform (Wasp)
-cd platform/app
-wasp start
+| Component | Status | Required For |
+|-----------|--------|--------------|
+| Database layer | ❌ | All multi-tenant features |
+| User management | ❌ | RBAC, staff onboarding |
+| Organization model | ❌ | Multi-tenancy |
+| Web platform/API | ❌ | Admin UI, dashboards |
+| Entra integration | ❌ | SSO, directory lookup |
+| Audit logging (structured) | ❌ | Compliance |
 
-# Engine (Python)  
-cd engine
-uvicorn app.main:app --reload
+### Key Files to Understand
 
-# Database
-# PostgreSQL running with connection in .env
+```
+goodteams-colab/
+├── src/
+│   ├── gateway/           # ← Core server, add platform routes here
+│   │   ├── server.impl.ts # Main gateway orchestration
+│   │   └── auth.ts        # Current single-user auth
+│   ├── config/            # ← YAML config system
+│   ├── agents/            # ← Agent framework
+│   └── infra/             # ← Infrastructure utilities
+├── package.json           # Node.js project
+└── docs/                  # ← Our specs live here
 ```
 
 ---
 
-## 3. Phase Overview
+## 3. Target State
+
+After RBAC implementation:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        IMPLEMENTATION PHASES                         │
-│                                                                      │
-│  Phase 1          Phase 2          Phase 3          Phase 4         │
-│  ════════         ════════         ════════         ════════        │
-│  Database &       Role             Invitation       Admin           │
-│  Core Models      Enforcement      System           Functions       │
-│                                                                      │
-│  Week 1-2         Week 2-3         Week 3-4         Week 4-5        │
-│                                                                      │
-│  ┌─────────┐      ┌─────────┐      ┌─────────┐      ┌─────────┐    │
-│  │ Schema  │      │ Middleware│    │ Entra   │      │ Models  │    │
-│  │ Updates │─────►│ & Guards │────►│ Invite  │─────►│ Skills  │    │
-│  │         │      │          │      │ Flow    │      │ Users   │    │
-│  └─────────┘      └─────────┘      └─────────┘      └─────────┘    │
-│       │                │                │                │          │
-│       ▼                ▼                ▼                ▼          │
-│  Checkpoint 1     Checkpoint 2     Checkpoint 3     Checkpoint 4   │
-│                                                                      │
-│                                              Phase 5                 │
-│                                              ════════               │
-│                                              Audit &                │
-│                                              Polish                 │
-│                                              Week 5-6               │
-│                                              ┌─────────┐            │
-│                                              │ Logging │            │
-│                                              │ Edge    │            │
-│                                              │ Cases   │            │
-│                                              └─────────┘            │
-│                                                   │                  │
-│                                                   ▼                  │
-│                                              Checkpoint 5           │
-│                                              (Release Ready)        │
+│                    GoodTeams Platform Layer                          │
+│                   (NEW — built into codebase)                        │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                      Database (PostgreSQL)                       ││
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           ││
+│  │  │   Org    │ │   User   │ │ Invite   │ │  Audit   │           ││
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                      Platform API                                ││
+│  │  /api/org  /api/users  /api/invitations  /api/auth             ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                      Entra Integration                           ││
+│  │  Admin Consent │ User SSO │ Directory Search │ Token Refresh    ││
+│  └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  │ orchestrates (per-tenant config)
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    OpenClaw Gateway (existing)                       │
+│  Sessions │ Agents │ Channels │ Tools │ Plugins                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase 1: Database & Core Models
+## 4. Foundation Work
 
-**Duration:** Week 1-2  
-**Goal:** Schema foundation for RBAC
+Before RBAC, we need infrastructure. This is **Phase 0.5** work.
 
-### Tasks
+### 4.1 Database Layer
 
-#### 1.1 Prisma Schema Updates
+**Choice:** PostgreSQL + Prisma ORM (TypeScript-native, great DX)
+
+```bash
+# Add dependencies
+pnpm add prisma @prisma/client
+pnpm add -D prisma
+
+# Initialize
+npx prisma init
+```
+
+**Location:** `src/platform/db/`
+
+```
+src/platform/
+├── db/
+│   ├── schema.prisma      # Database schema
+│   ├── client.ts          # Prisma client singleton
+│   └── migrations/        # Migration history
+```
+
+**Initial Schema:**
 
 ```prisma
-// Add to schema.prisma
+// src/platform/db/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                    String   @id @default(uuid())
+  name                  String
+  externalTenantId      String?  @unique  // Entra Tenant ID
+  status                OrgStatus @default(PENDING)
+  
+  // Model configuration
+  authorizedModels      Json     @default("[]")
+  defaultModelId        String?
+  
+  // Relations
+  users                 User[]
+  invitations           OrganizationInvitation[]
+  skills                OrganizationSkill[]
+  auditLogs             AuditLog[]
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model User {
+  id              String   @id @default(uuid())
+  email           String   @unique
+  username        String?
+  role            UserRole @default(USER)
+  
+  // Entra
+  externalId      String?  // Entra Object ID
+  
+  // Organization
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  
+  // Permissions
+  permissions     UserPermission[]
+  
+  // Invitations issued
+  issuedInvitations OrganizationInvitation[] @relation("InvitationIssuer")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model OrganizationInvitation {
+  id              String   @id @default(uuid())
+  email           String
+  role            UserRole
+  token           String   @unique
+  status          InvitationStatus @default(PENDING)
+  expiresAt       DateTime
+  
+  // Entra metadata
+  externalId      String?
+  entraUsername   String?
+  entraDisplayName String?
+  
+  // Relations
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  issuerId        String
+  issuer          User @relation("InvitationIssuer", fields: [issuerId], references: [id])
+  
+  createdAt       DateTime @default(now())
+  
+  @@unique([email, organizationId])
+}
 
 model UserPermission {
-    id        String   @id @default(uuid())
-    name      String
-    userId    String
-    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-    
-    grantedAt DateTime @default(now())
-    grantedBy String?
-    
-    @@unique([userId, name])
+  id        String   @id @default(uuid())
+  name      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  grantedAt DateTime @default(now())
+  grantedBy String?
+  
+  @@unique([userId, name])
 }
 
 model OrganizationSkill {
-    id              String   @id @default(uuid())
-    skillId         String   // ClawHub identifier
-    name            String
-    version         String
-    isEnabled       Boolean  @default(true)
-    config          Json     @default("{}")
-    allowedRoles    Json     @default("[\"ADMIN\", \"USER\"]")
-    
-    organizationId  String
-    organization    Organization @relation(fields: [organizationId], references: [id])
-    
-    installedAt     DateTime @default(now())
-    installedBy     String
-    updatedAt       DateTime @updatedAt
-    
-    @@unique([organizationId, skillId])
+  id              String   @id @default(uuid())
+  skillId         String
+  name            String
+  version         String
+  isEnabled       Boolean  @default(true)
+  config          Json     @default("{}")
+  allowedRoles    Json     @default("[\"ADMIN\", \"USER\"]")
+  
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  installedAt     DateTime @default(now())
+  installedBy     String
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([organizationId, skillId])
 }
 
-// Update User model
-model User {
-    // ... existing fields ...
-    permissions     UserPermission[]
+model AuditLog {
+  id              String   @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  actorId         String
+  actorRole       UserRole
+  action          String
+  targetType      String
+  targetId        String?
+  details         Json
+  ipAddress       String?
+  userAgent       String?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([organizationId, createdAt])
+  @@index([actorId])
+  @@index([action])
 }
 
-// Update Organization model  
-model Organization {
-    // ... existing fields ...
-    skills          OrganizationSkill[]
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  USER
+  BILLING
+  VIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum OrgStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
 }
 ```
 
-- [ ] **1.1.1** Add `UserPermission` model
-- [ ] **1.1.2** Add `OrganizationSkill` model
-- [ ] **1.1.3** Update `AuditLog` model (if not complete)
-- [ ] **1.1.4** Run `npx prisma migrate dev --name rbac_foundation`
-- [ ] **1.1.5** Regenerate Prisma client
+**Tasks:**
+- [ ] **F1.1** Add Prisma dependencies
+- [ ] **F1.2** Create schema.prisma with core models
+- [ ] **F1.3** Set up DATABASE_URL in env
+- [ ] **F1.4** Run initial migration
+- [ ] **F1.5** Create Prisma client singleton
 
-#### 1.2 Permission Constants
+### 4.2 Platform API Layer
+
+**Location:** `src/platform/api/`
+
+Extend the existing gateway HTTP server with platform routes:
 
 ```typescript
-// platform/app/src/auth/permissions.ts
+// src/platform/api/index.ts
+
+import { Router } from 'express';  // or use existing gateway HTTP framework
+import { orgRoutes } from './routes/org';
+import { userRoutes } from './routes/users';
+import { invitationRoutes } from './routes/invitations';
+import { authRoutes } from './routes/auth';
+
+export function registerPlatformRoutes(app: Express) {
+  const platformRouter = Router();
+  
+  platformRouter.use('/org', orgRoutes);
+  platformRouter.use('/users', userRoutes);
+  platformRouter.use('/invitations', invitationRoutes);
+  platformRouter.use('/auth', authRoutes);
+  
+  app.use('/api/platform', platformRouter);
+}
+```
+
+**Tasks:**
+- [ ] **F2.1** Create `src/platform/` directory structure
+- [ ] **F2.2** Set up platform router
+- [ ] **F2.3** Integrate with gateway HTTP server
+- [ ] **F2.4** Add request context middleware (user, org)
+
+### 4.3 Entra Integration
+
+**Location:** `src/platform/auth/entra/`
+
+Reference: [MICROSOFT-365-AUTH-ARCHITECTURE.md](./MICROSOFT-365-AUTH-ARCHITECTURE.md)
+
+```typescript
+// src/platform/auth/entra/client.ts
+
+import { ConfidentialClientApplication } from '@azure/msal-node';
+
+const msalConfig = {
+  auth: {
+    clientId: process.env.ENTRA_CLIENT_ID!,
+    clientSecret: process.env.ENTRA_CLIENT_SECRET!,
+    authority: 'https://login.microsoftonline.com/common',
+  }
+};
+
+export const msalClient = new ConfidentialClientApplication(msalConfig);
+
+// Admin consent URL generator
+export function getAdminConsentUrl(redirectUri: string, state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.ENTRA_CLIENT_ID!,
+    redirect_uri: redirectUri,
+    state,
+    scope: 'https://graph.microsoft.com/.default',
+    response_type: 'code',
+    prompt: 'admin_consent'
+  });
+  return `https://login.microsoftonline.com/common/adminconsent?${params}`;
+}
+
+// Directory search (requires User.Read.All or User.ReadBasic.All)
+export async function searchEntraDirectory(
+  accessToken: string, 
+  query: string
+): Promise<EntraUser[]> {
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/users?$filter=startswith(displayName,'${query}') or startswith(mail,'${query}')&$top=10`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  const data = await response.json();
+  return data.value;
+}
+```
+
+**Tasks:**
+- [ ] **F3.1** Add @azure/msal-node dependency
+- [ ] **F3.2** Create Entra client module
+- [ ] **F3.3** Implement admin consent flow
+- [ ] **F3.4** Implement user auth code flow
+- [ ] **F3.5** Implement token storage and refresh
+- [ ] **F3.6** Implement directory search
+
+### 4.4 Foundation Checkpoint
+
+Before proceeding to RBAC phases:
+
+| Criterion | Test |
+|-----------|------|
+| Database connects | `npx prisma db push` succeeds |
+| Models work | Can CRUD Organization, User via Prisma |
+| Platform routes load | GET `/api/platform/health` returns 200 |
+| Entra client works | Can generate admin consent URL |
+
+---
+
+## 5. Implementation Phases
+
+### Phase 1: Core RBAC (Week 1-2)
+
+**Goal:** Role enforcement, permission checks, admin continuity
+
+#### 1.1 Permission System
+
+```typescript
+// src/platform/auth/permissions.ts
 
 export const PERMISSIONS = {
-  // User Management
   MANAGE_USERS: 'MANAGE_USERS',
-  
-  // AI & Models
   MANAGE_MODELS: 'MANAGE_MODELS',
-  USE_AI_AGENTS: 'USE_AI_AGENTS',
-  
-  // Skills & Tools
   MANAGE_SKILLS: 'MANAGE_SKILLS',
-  USE_SKILLS: 'USE_SKILLS',
-  
-  // Integrations
   MANAGE_INTEGRATIONS: 'MANAGE_INTEGRATIONS',
-  MANAGE_SHAREPOINT: 'MANAGE_SHAREPOINT',
-  
-  // Data Operations
+  MANAGE_GUARDRAILS: 'MANAGE_GUARDRAILS',
+  VIEW_AUDIT_LOGS: 'VIEW_AUDIT_LOGS',
+  USE_AI_AGENTS: 'USE_AI_AGENTS',
+  USE_SKILLS: 'USE_SKILLS',
+  MANAGE_BILLING: 'MANAGE_BILLING',
+  // Granular data permissions
   CRM_CREATE: 'CRM_CREATE',
   CRM_UPDATE: 'CRM_UPDATE',
   CRM_DELETE: 'CRM_DELETE',
   SQL_EXECUTE: 'SQL_EXECUTE',
-  SQL_TRAINING: 'SQL_TRAINING',
-  
-  // Workflows
-  MANAGE_WORKFLOWS: 'MANAGE_WORKFLOWS',
-  MANAGE_AGENTS: 'MANAGE_AGENTS',
-  
-  // Admin
-  MANAGE_GUARDRAILS: 'MANAGE_GUARDRAILS',
-  VIEW_AUDIT_LOGS: 'VIEW_AUDIT_LOGS',
-  MANAGE_BILLING: 'MANAGE_BILLING',
 } as const;
 
-export const ADMIN_IMPLICIT_PERMISSIONS = [
-  PERMISSIONS.MANAGE_USERS,
-  PERMISSIONS.MANAGE_MODELS,
-  PERMISSIONS.MANAGE_SKILLS,
-  PERMISSIONS.MANAGE_INTEGRATIONS,
-  PERMISSIONS.MANAGE_GUARDRAILS,
-  PERMISSIONS.VIEW_AUDIT_LOGS,
-  PERMISSIONS.USE_AI_AGENTS,
-  PERMISSIONS.USE_SKILLS,
+export const ADMIN_IMPLICIT = [
+  'MANAGE_USERS', 'MANAGE_MODELS', 'MANAGE_SKILLS',
+  'MANAGE_INTEGRATIONS', 'MANAGE_GUARDRAILS', 'VIEW_AUDIT_LOGS',
+  'USE_AI_AGENTS', 'USE_SKILLS'
 ];
 
-export const USER_IMPLICIT_PERMISSIONS = [
-  PERMISSIONS.USE_AI_AGENTS,
-  PERMISSIONS.USE_SKILLS,
-];
+export const USER_IMPLICIT = ['USE_AI_AGENTS', 'USE_SKILLS'];
 ```
 
-- [ ] **1.2.1** Create permissions constants file
-- [ ] **1.2.2** Mirror in Python engine (`engine/app/core/permissions.py`)
-
-#### 1.3 Verify Existing Models
-
-- [ ] **1.3.1** Confirm `OrganizationInvitation` model exists and is complete
-- [ ] **1.3.2** Confirm `Organization.externalTenantId` exists
-- [ ] **1.3.3** Confirm `User.role` enum includes all required roles
-- [ ] **1.3.4** Confirm `User.externalId` exists (Entra Object ID)
-
-### Checkpoint 1 Criteria
-
-| Criterion | Test |
-|-----------|------|
-| Schema migrates cleanly | `npx prisma migrate dev` succeeds |
-| Models accessible | Can create/query UserPermission, OrganizationSkill |
-| No regressions | Existing tests pass |
-| Constants defined | TypeScript and Python permission constants match |
-
-### Tests for Phase 1
-
 ```typescript
-// platform/app/src/auth/permissions.test.ts
-describe('Permissions', () => {
-  it('should have matching TS and Python permission constants', async () => {
-    // Compare exports
-  });
-  
-  it('should create UserPermission', async () => {
-    const user = await createTestUser();
-    const perm = await prisma.userPermission.create({
-      data: { userId: user.id, name: 'CRM_CREATE' }
-    });
-    expect(perm.name).toBe('CRM_CREATE');
-  });
-});
-```
+// src/platform/auth/checkPermission.ts
 
----
-
-## Phase 2: Role Enforcement
-
-**Duration:** Week 2-3  
-**Goal:** Middleware and guards for role-based access
-
-### Tasks
-
-#### 2.1 Permission Check Functions
-
-```typescript
-// platform/app/src/auth/checkPermission.ts
+import { prisma } from '../db/client';
+import { ADMIN_IMPLICIT, USER_IMPLICIT } from './permissions';
 
 export async function checkPermission(
-  userId: string, 
+  userId: string,
   permission: string
 ): Promise<boolean> {
   const user = await prisma.user.findUnique({
@@ -306,471 +470,467 @@ export async function checkPermission(
   });
   
   if (!user) return false;
-  
-  // Super Admin has everything
   if (user.role === 'SUPER_ADMIN') return true;
+  if (user.role === 'ADMIN' && ADMIN_IMPLICIT.includes(permission)) return true;
+  if (['ADMIN', 'USER'].includes(user.role) && USER_IMPLICIT.includes(permission)) return true;
+  if (user.role === 'BILLING' && permission === 'MANAGE_BILLING') return true;
   
-  // Admin implicit permissions
-  if (user.role === 'ADMIN' && ADMIN_IMPLICIT_PERMISSIONS.includes(permission)) {
-    return true;
-  }
-  
-  // User implicit permissions
-  if (['ADMIN', 'USER'].includes(user.role) && USER_IMPLICIT_PERMISSIONS.includes(permission)) {
-    return true;
-  }
-  
-  // Billing role
-  if (user.role === 'BILLING' && permission === 'MANAGE_BILLING') {
-    return true;
-  }
-  
-  // Explicit permissions
   return user.permissions.some(p => p.name === permission);
 }
 
-export async function requirePermission(permission: string, context: any) {
-  const hasPermission = await checkPermission(context.user.id, permission);
-  if (!hasPermission) {
-    throw new HttpError(403, `Permission denied: ${permission}`);
-  }
+export function requirePermission(permission: string) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const user = req.context?.user;
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    
+    const allowed = await checkPermission(user.id, permission);
+    if (!allowed) return res.status(403).json({ error: `Permission denied: ${permission}` });
+    
+    next();
+  };
 }
 ```
 
-- [ ] **2.1.1** Implement `checkPermission()` in TypeScript
-- [ ] **2.1.2** Implement `requirePermission()` middleware
-- [ ] **2.1.3** Port to Python engine (`engine/app/core/auth.py`)
+**Tasks:**
+- [ ] **1.1.1** Create permission constants
+- [ ] **1.1.2** Implement checkPermission function
+- [ ] **1.1.3** Create requirePermission middleware
+- [ ] **1.1.4** Write tests
 
-#### 2.2 Admin Continuity Guard
+#### 1.2 Admin Continuity Guard
 
 ```typescript
-// platform/app/src/auth/adminGuard.ts
+// src/platform/auth/adminGuard.ts
 
 export async function validateAdminChange(
-  targetUserId: string, 
-  newRole: string | null,  // null = removal
+  targetUserId: string,
+  newRole: string | null,
   organizationId: string
 ): Promise<void> {
-  const targetUser = await prisma.user.findUnique({ 
-    where: { id: targetUserId } 
-  });
+  const target = await prisma.user.findUnique({ where: { id: targetUserId } });
+  if (!target) throw new Error('User not found');
   
-  if (!targetUser) throw new HttpError(404, 'User not found');
-  
-  // If current role is ADMIN and we're demoting/removing
-  if (targetUser.role === 'ADMIN' && newRole !== 'ADMIN') {
+  // Demoting or removing an admin?
+  if (target.role === 'ADMIN' && newRole !== 'ADMIN') {
     const adminCount = await prisma.user.count({
-      where: { 
-        organizationId, 
-        role: 'ADMIN' 
-      }
+      where: { organizationId, role: 'ADMIN' }
     });
     
     if (adminCount <= 1) {
-      throw new HttpError(400, 
-        'Cannot remove the last administrator. Assign another admin first.'
-      );
+      throw new Error('Cannot remove the last administrator. Assign another admin first.');
     }
   }
 }
 ```
 
-- [ ] **2.2.1** Implement admin continuity guard
-- [ ] **2.2.2** Add self-removal prevention (can't remove yourself)
-- [ ] **2.2.3** Integrate into user update/removal operations
+**Tasks:**
+- [ ] **1.2.1** Implement admin continuity guard
+- [ ] **1.2.2** Add self-removal prevention
+- [ ] **1.2.3** Integrate into user update/removal routes
+- [ ] **1.2.4** Write tests
 
-#### 2.3 Apply Guards to Existing Operations
-
-- [ ] **2.3.1** Audit all operations in `organization/operations.ts`
-- [ ] **2.3.2** Add `requirePermission()` where missing
-- [ ] **2.3.3** Audit Python engine endpoints
-- [ ] **2.3.4** Add permission checks to engine
-
-### Checkpoint 2 Criteria
+#### Checkpoint 1
 
 | Criterion | Test |
 |-----------|------|
-| Permission checks work | Unit tests for checkPermission pass |
-| Admin guard prevents last-admin removal | Test case throws expected error |
-| Unauthorized access blocked | Non-admin can't access admin endpoints |
-| Self-removal blocked | Admin can't remove themselves |
-
-### Tests for Phase 2
-
-```typescript
-describe('Role Enforcement', () => {
-  describe('checkPermission', () => {
-    it('grants ADMIN implicit permissions', async () => {
-      const admin = await createTestUser({ role: 'ADMIN' });
-      expect(await checkPermission(admin.id, 'MANAGE_MODELS')).toBe(true);
-    });
-    
-    it('denies USER admin permissions', async () => {
-      const user = await createTestUser({ role: 'USER' });
-      expect(await checkPermission(user.id, 'MANAGE_MODELS')).toBe(false);
-    });
-    
-    it('grants explicit permissions', async () => {
-      const user = await createTestUser({ role: 'USER' });
-      await prisma.userPermission.create({
-        data: { userId: user.id, name: 'CRM_CREATE' }
-      });
-      expect(await checkPermission(user.id, 'CRM_CREATE')).toBe(true);
-    });
-  });
-  
-  describe('Admin Continuity', () => {
-    it('prevents removing last admin', async () => {
-      const org = await createTestOrg();
-      const admin = await createTestUser({ role: 'ADMIN', organizationId: org.id });
-      
-      await expect(
-        validateAdminChange(admin.id, 'USER', org.id)
-      ).rejects.toThrow('Cannot remove the last administrator');
-    });
-    
-    it('allows demotion when other admins exist', async () => {
-      const org = await createTestOrg();
-      const admin1 = await createTestUser({ role: 'ADMIN', organizationId: org.id });
-      const admin2 = await createTestUser({ role: 'ADMIN', organizationId: org.id });
-      
-      await expect(
-        validateAdminChange(admin1.id, 'USER', org.id)
-      ).resolves.not.toThrow();
-    });
-  });
-});
-```
+| Permission check works | Admin has implicit perms, User doesn't |
+| Explicit perms work | Granted permission returns true |
+| Admin guard works | Last admin removal blocked |
+| Middleware works | Unauthorized requests return 403 |
 
 ---
 
-## Phase 3: Invitation System
+### Phase 2: Organization Lifecycle (Week 2-3)
 
-**Duration:** Week 3-4  
-**Goal:** Complete and harden invitation workflow
+**Goal:** Org creation via Entra, status management
 
-### Tasks
-
-#### 3.1 Review Existing Implementation
-
-- [ ] **3.1.1** Audit `invitation/operations.ts` against spec
-- [ ] **3.1.2** Verify Entra directory search works
-- [ ] **3.1.3** Test email sending flow
-- [ ] **3.1.4** Verify invitation acceptance flow
-
-#### 3.2 Add Missing Features
+#### 2.1 Entra Admin Consent Flow
 
 ```typescript
-// Resend invitation
-export const resendInvitation = async (
-  { id }: { id: string },
-  context: any
-) => {
-  await requirePermission('MANAGE_USERS', context);
-  
-  const invitation = await prisma.organizationInvitation.findFirst({
-    where: { 
-      id, 
-      organizationId: context.user.organizationId,
-      status: 'PENDING' 
-    },
-    include: { organization: true }
-  });
-  
-  if (!invitation) throw new HttpError(404, 'Invitation not found');
-  
-  // Reset expiry
-  const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  
-  await prisma.organizationInvitation.update({
-    where: { id },
-    data: { expiresAt: newExpiresAt }
-  });
-  
-  // Resend email
-  await emailSender.send({
-    to: invitation.email,
-    ...getInvitationEmailContent({
-      token: invitation.token,
-      role: invitation.role,
-      inviterName: context.user.username || context.user.email,
-      organizationName: invitation.organization.name
-    })
-  });
-};
-```
+// src/platform/api/routes/auth.ts
 
-- [ ] **3.2.1** Add `resendInvitation` operation (if missing)
-- [ ] **3.2.2** Add invitation expiry cron job (mark expired)
-- [ ] **3.2.3** Add invitation UI status indicators
-
-#### 3.3 Harden Security
-
-- [ ] **3.3.1** Rate limit invitation creation (prevent spam)
-- [ ] **3.3.2** Validate email domain matches Entra tenant (optional)
-- [ ] **3.3.3** Add audit log entry for all invitation actions
-
-### Checkpoint 3 Criteria
-
-| Criterion | Test |
-|-----------|------|
-| Full invitation lifecycle | Create → Email → Accept works end-to-end |
-| Entra search returns users | Query returns matching directory users |
-| Expiry works | Expired invitations can't be accepted |
-| Resend works | Resend updates expiry and sends email |
-| Revoke works | Admin can cancel pending invitation |
-
-### Tests for Phase 3
-
-```typescript
-describe('Invitation System', () => {
-  it('creates invitation with Entra metadata', async () => {
-    const admin = await createTestAdmin();
-    const result = await createInvitation({
-      email: 'new@company.com',
-      role: 'USER',
-      externalId: 'entra-object-id-123',
-      entraDisplayName: 'New User'
-    }, { user: admin });
-    
-    expect(result.status).toBe('PENDING');
-    expect(result.externalId).toBe('entra-object-id-123');
-  });
+router.get('/entra/consent', async (req, res) => {
+  const state = crypto.randomUUID();
+  // Store state -> user mapping for callback
+  await storeConsentState(state, req.context.user.id);
   
-  it('prevents duplicate invitations', async () => {
-    const admin = await createTestAdmin();
-    await createInvitation({ email: 'dup@company.com', role: 'USER' }, { user: admin });
-    
-    await expect(
-      createInvitation({ email: 'dup@company.com', role: 'USER' }, { user: admin })
-    ).rejects.toThrow('Invitation already pending');
-  });
-  
-  it('accepts invitation and links user', async () => {
-    const invitation = await createTestInvitation();
-    const newUser = await createTestUser({ email: invitation.email });
-    
-    await acceptInvitation({ token: invitation.token }, { user: newUser });
-    
-    const updated = await prisma.user.findUnique({ where: { id: newUser.id }});
-    expect(updated.organizationId).toBe(invitation.organizationId);
-    expect(updated.role).toBe(invitation.role);
-  });
+  const url = getAdminConsentUrl(
+    `${process.env.APP_URL}/api/platform/auth/entra/callback`,
+    state
+  );
+  res.redirect(url);
 });
-```
 
----
-
-## Phase 4: Admin Functions
-
-**Duration:** Week 4-5  
-**Goal:** Model management, skill management, user management UI
-
-### Tasks
-
-#### 4.1 Model Management (Already Exists - Verify)
-
-- [ ] **4.1.1** Verify `updateAuthorizedModels` has permission check
-- [ ] **4.1.2** Verify `updateOrganizationModelDefaults` has permission check
-- [ ] **4.1.3** Add audit logging for model changes
-
-#### 4.2 Skill Management (New)
-
-```typescript
-// platform/app/src/organization/skills.ts
-
-export const getOrganizationSkills = async (_args: void, context: any) => {
-  if (!context.user?.organizationId) throw new HttpError(401);
+router.get('/entra/callback', async (req, res) => {
+  const { tenant, admin_consent, state } = req.query;
   
-  return prisma.organizationSkill.findMany({
-    where: { organizationId: context.user.organizationId },
-    orderBy: { name: 'asc' }
-  });
-};
-
-export const installSkill = async (
-  { skillId, name, version }: InstallSkillInput,
-  context: any
-) => {
-  await requirePermission('MANAGE_SKILLS', context);
+  if (admin_consent !== 'True') {
+    return res.status(400).json({ error: 'Admin consent required' });
+  }
   
-  // Check if already installed
-  const existing = await prisma.organizationSkill.findUnique({
-    where: {
-      organizationId_skillId: {
-        organizationId: context.user.organizationId,
-        skillId
-      }
+  const userId = await getConsentState(state);
+  if (!userId) return res.status(400).json({ error: 'Invalid state' });
+  
+  // Create or update organization
+  const org = await prisma.organization.create({
+    data: {
+      name: `Org-${tenant}`, // Will be updated with tenant details
+      externalTenantId: tenant,
+      status: 'ACTIVE',
     }
   });
   
-  if (existing) throw new HttpError(400, 'Skill already installed');
+  // Link user as first admin
+  await prisma.user.update({
+    where: { id: userId },
+    data: { organizationId: org.id, role: 'ADMIN' }
+  });
+  
+  res.redirect('/dashboard?setup=complete');
+});
+```
+
+**Tasks:**
+- [ ] **2.1.1** Implement consent initiation route
+- [ ] **2.1.2** Implement consent callback route
+- [ ] **2.1.3** Create organization on consent
+- [ ] **2.1.4** Promote user to admin
+- [ ] **2.1.5** Write integration tests
+
+#### 2.2 Organization Operations
+
+```typescript
+// src/platform/api/routes/org.ts
+
+router.get('/', requireAuth, async (req, res) => {
+  const org = await prisma.organization.findUnique({
+    where: { id: req.context.user.organizationId },
+    include: { users: { select: { id: true, email: true, role: true } } }
+  });
+  res.json(org);
+});
+
+router.put('/', requireAuth, requirePermission('MANAGE_USERS'), async (req, res) => {
+  const { name } = req.body;
+  const org = await prisma.organization.update({
+    where: { id: req.context.user.organizationId },
+    data: { name }
+  });
+  res.json(org);
+});
+```
+
+**Tasks:**
+- [ ] **2.2.1** GET org details
+- [ ] **2.2.2** UPDATE org settings
+- [ ] **2.2.3** Org status transitions (PENDING → ACTIVE)
+- [ ] **2.2.4** Write tests
+
+#### Checkpoint 2
+
+| Criterion | Test |
+|-----------|------|
+| Consent flow works | Redirect → Microsoft → Callback creates org |
+| Creator becomes admin | User role is ADMIN after consent |
+| Org CRUD works | Can read/update organization |
+| PENDING state enforced | Orgs without Entra can't invite |
+
+---
+
+### Phase 3: Invitation System (Week 3-4)
+
+**Goal:** Entra-integrated invitations, full lifecycle
+
+#### 3.1 Directory Search
+
+```typescript
+// src/platform/api/routes/entra.ts
+
+router.get('/users', requireAuth, requirePermission('MANAGE_USERS'), async (req, res) => {
+  const { query } = req.query;
+  if (!query || query.length < 3) {
+    return res.json([]);
+  }
+  
+  const token = await getValidMicrosoftToken(req.context.user.id);
+  const users = await searchEntraDirectory(token, query);
+  res.json(users);
+});
+```
+
+#### 3.2 Invitation CRUD
+
+```typescript
+// src/platform/api/routes/invitations.ts
+
+router.post('/', requireAuth, requirePermission('MANAGE_USERS'), async (req, res) => {
+  const { email, role, externalId, entraUsername, entraDisplayName } = req.body;
+  const org = await prisma.organization.findUnique({
+    where: { id: req.context.user.organizationId }
+  });
+  
+  // Require Entra connection
+  if (!org.externalTenantId) {
+    return res.status(400).json({ 
+      error: 'Connect Microsoft Entra before inviting users' 
+    });
+  }
+  
+  // Check for existing user or invitation
+  const existing = await prisma.user.findFirst({ where: { email } });
+  if (existing) {
+    return res.status(400).json({ error: 'User already exists' });
+  }
+  
+  const pendingInvite = await prisma.organizationInvitation.findFirst({
+    where: { email, organizationId: org.id, status: 'PENDING' }
+  });
+  if (pendingInvite) {
+    return res.status(400).json({ error: 'Invitation already pending' });
+  }
+  
+  const invitation = await prisma.organizationInvitation.create({
+    data: {
+      email,
+      role,
+      organizationId: org.id,
+      issuerId: req.context.user.id,
+      token: crypto.randomUUID(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      externalId,
+      entraUsername,
+      entraDisplayName
+    }
+  });
+  
+  // Send email
+  await sendInvitationEmail(invitation, org.name, req.context.user.email);
+  
+  // Audit log
+  await logAudit(req.context, 'invitation.created', 'invitation', invitation.id, { email, role });
+  
+  res.json(invitation);
+});
+
+router.post('/:token/accept', requireAuth, async (req, res) => {
+  const invitation = await prisma.organizationInvitation.findUnique({
+    where: { token: req.params.token }
+  });
+  
+  if (!invitation) return res.status(404).json({ error: 'Invalid token' });
+  if (invitation.status !== 'PENDING') return res.status(400).json({ error: 'Invitation not pending' });
+  if (invitation.expiresAt < new Date()) {
+    await prisma.organizationInvitation.update({
+      where: { id: invitation.id },
+      data: { status: 'EXPIRED' }
+    });
+    return res.status(400).json({ error: 'Invitation expired' });
+  }
+  
+  // Link user to org
+  await prisma.user.update({
+    where: { id: req.context.user.id },
+    data: {
+      organizationId: invitation.organizationId,
+      role: invitation.role,
+      externalId: invitation.externalId
+    }
+  });
+  
+  await prisma.organizationInvitation.update({
+    where: { id: invitation.id },
+    data: { status: 'ACCEPTED' }
+  });
+  
+  res.json({ success: true });
+});
+```
+
+**Tasks:**
+- [ ] **3.1** Entra directory search endpoint
+- [ ] **3.2** Create invitation endpoint
+- [ ] **3.3** List pending invitations
+- [ ] **3.4** Accept invitation endpoint
+- [ ] **3.5** Revoke invitation endpoint
+- [ ] **3.6** Resend invitation endpoint
+- [ ] **3.7** Email sending (use existing email infra or add)
+- [ ] **3.8** Write tests
+
+#### Checkpoint 3
+
+| Criterion | Test |
+|-----------|------|
+| Directory search works | Returns Entra users matching query |
+| Create invitation works | Creates pending invitation, sends email |
+| Accept works | User linked to org with correct role |
+| Expiry works | Expired invitations rejected |
+| Revoke works | Admin can cancel invitation |
+
+---
+
+### Phase 4: Admin Functions (Week 4-5)
+
+**Goal:** Model management, skill management, user management
+
+#### 4.1 Model Management
+
+```typescript
+// src/platform/api/routes/org.ts
+
+router.get('/models', requireAuth, requirePermission('MANAGE_MODELS'), async (req, res) => {
+  const org = await prisma.organization.findUnique({
+    where: { id: req.context.user.organizationId }
+  });
+  res.json(org.authorizedModels);
+});
+
+router.put('/models', requireAuth, requirePermission('MANAGE_MODELS'), async (req, res) => {
+  const { models } = req.body;
+  
+  const org = await prisma.organization.update({
+    where: { id: req.context.user.organizationId },
+    data: { authorizedModels: models }
+  });
+  
+  await logAudit(req.context, 'models.updated', 'organization', org.id, { models });
+  
+  res.json(org.authorizedModels);
+});
+```
+
+#### 4.2 Skill Management
+
+```typescript
+// src/platform/api/routes/skills.ts
+
+router.get('/', requireAuth, async (req, res) => {
+  const skills = await prisma.organizationSkill.findMany({
+    where: { organizationId: req.context.user.organizationId }
+  });
+  res.json(skills);
+});
+
+router.post('/', requireAuth, requirePermission('MANAGE_SKILLS'), async (req, res) => {
+  const { skillId, name, version } = req.body;
   
   const skill = await prisma.organizationSkill.create({
     data: {
       skillId,
       name,
       version,
-      organizationId: context.user.organizationId,
-      installedBy: context.user.id
+      organizationId: req.context.user.organizationId,
+      installedBy: req.context.user.id
     }
   });
   
-  await logAuditEvent(context, 'skill.installed', 'skill', skill.id, { skillId, name });
+  await logAudit(req.context, 'skill.installed', 'skill', skill.id, { skillId, name });
   
-  return skill;
-};
+  res.json(skill);
+});
 
-export const configureSkill = async (
-  { id, config, allowedRoles, isEnabled }: ConfigureSkillInput,
-  context: any
-) => {
-  await requirePermission('MANAGE_SKILLS', context);
+router.put('/:id', requireAuth, requirePermission('MANAGE_SKILLS'), async (req, res) => {
+  const { config, allowedRoles, isEnabled } = req.body;
   
-  const skill = await prisma.organizationSkill.findFirst({
-    where: { id, organizationId: context.user.organizationId }
+  const skill = await prisma.organizationSkill.update({
+    where: { id: req.params.id },
+    data: { config, allowedRoles, isEnabled }
   });
   
-  if (!skill) throw new HttpError(404, 'Skill not found');
+  await logAudit(req.context, 'skill.configured', 'skill', skill.id, { config, allowedRoles, isEnabled });
   
-  const updated = await prisma.organizationSkill.update({
-    where: { id },
-    data: {
-      config: config ?? skill.config,
-      allowedRoles: allowedRoles ?? skill.allowedRoles,
-      isEnabled: isEnabled ?? skill.isEnabled
-    }
-  });
-  
-  await logAuditEvent(context, 'skill.configured', 'skill', id, { config, allowedRoles, isEnabled });
-  
-  return updated;
-};
+  res.json(skill);
+});
 
-export const removeSkill = async ({ id }: { id: string }, context: any) => {
-  await requirePermission('MANAGE_SKILLS', context);
-  
-  const skill = await prisma.organizationSkill.findFirst({
-    where: { id, organizationId: context.user.organizationId }
-  });
-  
-  if (!skill) throw new HttpError(404, 'Skill not found');
-  
-  await prisma.organizationSkill.delete({ where: { id } });
-  
-  await logAuditEvent(context, 'skill.removed', 'skill', id, { skillId: skill.skillId });
-};
+router.delete('/:id', requireAuth, requirePermission('MANAGE_SKILLS'), async (req, res) => {
+  await prisma.organizationSkill.delete({ where: { id: req.params.id } });
+  await logAudit(req.context, 'skill.removed', 'skill', req.params.id, {});
+  res.json({ success: true });
+});
 ```
 
-- [ ] **4.2.1** Create `skills.ts` operations file
-- [ ] **4.2.2** Register operations in Wasp
-- [ ] **4.2.3** Create Skill Management UI page
-- [ ] **4.2.4** Integrate with ClawHub API (skill search/install)
+#### 4.3 User Management
 
-#### 4.3 User Management (Enhance Existing)
+```typescript
+// src/platform/api/routes/users.ts
 
-- [ ] **4.3.1** Add role change operation with admin guard
-- [ ] **4.3.2** Add permission grant/revoke operations
-- [ ] **4.3.3** Add user removal with admin guard
-- [ ] **4.3.4** Create User Management UI (list, edit role, remove)
+router.get('/', requireAuth, async (req, res) => {
+  const users = await prisma.user.findMany({
+    where: { organizationId: req.context.user.organizationId },
+    select: { id: true, email: true, username: true, role: true, createdAt: true }
+  });
+  res.json(users);
+});
 
-#### 4.4 Register Wasp Operations
+router.put('/:id/role', requireAuth, requirePermission('MANAGE_USERS'), async (req, res) => {
+  const { role } = req.body;
+  
+  // Admin continuity check
+  await validateAdminChange(req.params.id, role, req.context.user.organizationId);
+  
+  // Can't change own role
+  if (req.params.id === req.context.user.id) {
+    return res.status(400).json({ error: "Cannot change your own role" });
+  }
+  
+  const user = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { role }
+  });
+  
+  await logAudit(req.context, 'user.role.changed', 'user', user.id, { newRole: role });
+  
+  res.json(user);
+});
 
-```wasp
-// Add to main.wasp
-
-action installSkill {
-  fn: import { installSkill } from "@src/organization/skills",
-  entities: [OrganizationSkill]
-}
-
-action configureSkill {
-  fn: import { configureSkill } from "@src/organization/skills",
-  entities: [OrganizationSkill]
-}
-
-action removeSkill {
-  fn: import { removeSkill } from "@src/organization/skills",
-  entities: [OrganizationSkill]
-}
-
-query getOrganizationSkills {
-  fn: import { getOrganizationSkills } from "@src/organization/skills",
-  entities: [OrganizationSkill]
-}
+router.delete('/:id', requireAuth, requirePermission('MANAGE_USERS'), async (req, res) => {
+  // Admin continuity check
+  await validateAdminChange(req.params.id, null, req.context.user.organizationId);
+  
+  // Can't remove self
+  if (req.params.id === req.context.user.id) {
+    return res.status(400).json({ error: "Cannot remove yourself" });
+  }
+  
+  await prisma.user.update({
+    where: { id: req.params.id },
+    data: { organizationId: null, role: 'USER' }  // Unlink, don't delete
+  });
+  
+  await logAudit(req.context, 'user.removed', 'user', req.params.id, {});
+  
+  res.json({ success: true });
+});
 ```
 
-- [ ] **4.4.1** Add skill operations to main.wasp
-- [ ] **4.4.2** Add user management operations to main.wasp
+**Tasks:**
+- [ ] **4.1** Model CRUD endpoints
+- [ ] **4.2** Skill CRUD endpoints
+- [ ] **4.3** User management endpoints
+- [ ] **4.4** Permission grant/revoke endpoints
+- [ ] **4.5** Write tests
 
-### Checkpoint 4 Criteria
+#### Checkpoint 4
 
 | Criterion | Test |
 |-----------|------|
 | Model management works | Admin can enable/disable models |
-| Skill installation works | Admin can install from ClawHub |
-| Skill configuration works | Admin can enable/disable, set allowed roles |
-| User role change works | Admin can promote/demote (with guard) |
-| Permission grant works | Admin can grant explicit permissions |
-
-### Tests for Phase 4
-
-```typescript
-describe('Admin Functions', () => {
-  describe('Skill Management', () => {
-    it('installs skill', async () => {
-      const admin = await createTestAdmin();
-      const skill = await installSkill({
-        skillId: 'weather',
-        name: 'Weather',
-        version: '1.0.0'
-      }, { user: admin });
-      
-      expect(skill.skillId).toBe('weather');
-      expect(skill.isEnabled).toBe(true);
-    });
-    
-    it('prevents non-admin from installing', async () => {
-      const user = await createTestUser({ role: 'USER' });
-      
-      await expect(
-        installSkill({ skillId: 'weather', name: 'Weather', version: '1.0.0' }, { user })
-      ).rejects.toThrow('Permission denied');
-    });
-  });
-  
-  describe('User Management', () => {
-    it('changes user role', async () => {
-      const org = await createTestOrg();
-      const admin1 = await createTestAdmin({ organizationId: org.id });
-      const admin2 = await createTestAdmin({ organizationId: org.id });
-      const user = await createTestUser({ role: 'USER', organizationId: org.id });
-      
-      await updateUserRole({ userId: user.id, role: 'ADMIN' }, { user: admin1 });
-      
-      const updated = await prisma.user.findUnique({ where: { id: user.id }});
-      expect(updated.role).toBe('ADMIN');
-    });
-  });
-});
-```
+| Skill management works | Admin can install/configure/remove skills |
+| User role change works | Admin can promote/demote (with guards) |
+| User removal works | Admin can remove (with guards) |
 
 ---
 
-## Phase 5: Audit & Polish
+### Phase 5: Audit & Polish (Week 5-6)
 
-**Duration:** Week 5-6  
-**Goal:** Complete audit logging, edge cases, documentation
-
-### Tasks
+**Goal:** Complete audit logging, edge cases, hardening
 
 #### 5.1 Audit Logging
 
 ```typescript
-// platform/app/src/audit/logger.ts
+// src/platform/audit/logger.ts
 
-export async function logAuditEvent(
-  context: any,
+export async function logAudit(
+  context: RequestContext,
   action: string,
   targetType: string,
   targetId: string | null,
@@ -785,98 +945,56 @@ export async function logAuditEvent(
       targetType,
       targetId,
       details,
-      ipAddress: context.clientIp,
+      ipAddress: context.ip,
       userAgent: context.userAgent
     }
   });
 }
 
 // Actions to log:
-// - user.role.changed
-// - user.permission.granted
-// - user.permission.revoked
-// - user.removed
-// - invitation.created
-// - invitation.accepted
-// - invitation.revoked
-// - model.authorized
-// - model.unauthorized
-// - model.defaults.changed
-// - skill.installed
-// - skill.configured
-// - skill.removed
-// - guardrails.updated
+// invitation.created, invitation.accepted, invitation.revoked
+// user.role.changed, user.permission.granted, user.permission.revoked, user.removed
+// models.updated, skill.installed, skill.configured, skill.removed
+// org.settings.updated
 ```
-
-- [ ] **5.1.1** Create audit logging utility
-- [ ] **5.1.2** Add logging to all admin operations
-- [ ] **5.1.3** Create Audit Log viewer UI
 
 #### 5.2 Edge Cases
 
-- [ ] **5.2.1** Handle organization deletion (what happens to users?)
-- [ ] **5.2.2** Handle user leaving organization voluntarily
-- [ ] **5.2.3** Handle expired invitation cleanup (cron)
-- [ ] **5.2.4** Handle Entra token refresh failures gracefully
+- [ ] **5.2.1** Invitation expiry cron job
+- [ ] **5.2.2** Token refresh error handling
+- [ ] **5.2.3** Org deletion cascade rules
+- [ ] **5.2.4** User leaving org voluntarily
 
-#### 5.3 UI Polish
-
-- [ ] **5.3.1** Add loading states to all admin actions
-- [ ] **5.3.2** Add confirmation dialogs for destructive actions
-- [ ] **5.3.3** Add success/error toasts
-- [ ] **5.3.4** Mobile responsive check
-
-#### 5.4 Documentation
-
-- [ ] **5.4.1** Update API documentation
-- [ ] **5.4.2** Write admin user guide
-- [ ] **5.4.3** Add inline help text to UI
-
-### Checkpoint 5 Criteria (Release Ready)
+#### Checkpoint 5 (Release Ready)
 
 | Criterion | Test |
 |-----------|------|
-| All admin actions logged | Audit log populated for each action type |
-| Audit log viewable | Admin can view filtered audit logs |
-| No orphaned data | User removal cleans up related records |
-| Error handling complete | All edge cases show helpful messages |
-| Documentation complete | API docs and user guide exist |
+| All actions logged | Audit log populated for each action type |
+| Audit log queryable | Can filter by action, actor, date range |
+| Error handling complete | Edge cases return helpful messages |
+| No data leaks | User removal cleans up properly |
 
 ---
 
-## Testing Strategy
+## 6. Testing Strategy
 
-### Test Pyramid
+### Test Structure
 
 ```
-                    ┌───────────┐
-                   │   E2E     │  ← 10%: Critical user journeys
-                  │  (Cypress)  │
-                 └─────────────┘
-                ┌───────────────────┐
-               │    Integration     │  ← 30%: API + DB
-              │    (Vitest + DB)    │
-             └─────────────────────┘
-            ┌───────────────────────────┐
-           │           Unit             │  ← 60%: Functions, guards
-          │         (Vitest)            │
-         └─────────────────────────────┘
+src/platform/
+├── __tests__/
+│   ├── unit/
+│   │   ├── permissions.test.ts
+│   │   ├── adminGuard.test.ts
+│   │   └── ...
+│   ├── integration/
+│   │   ├── invitations.test.ts
+│   │   ├── org.test.ts
+│   │   └── ...
+│   └── e2e/
+│       ├── onboarding.test.ts
+│       └── ...
 ```
-
-### Test Categories
-
-| Category | Tool | What to Test |
-|----------|------|--------------|
-| Unit | Vitest | Permission checks, guards, utilities |
-| Integration | Vitest + Prisma | Operations with real DB |
-| E2E | Cypress | Full user journeys (invite → accept → use) |
-
-### Key E2E Scenarios
-
-1. **First Admin Flow**: Create org via Entra → becomes admin → can access admin pages
-2. **Invite User Flow**: Admin invites → email received → user accepts → can access org
-3. **Role Change Flow**: Admin promotes user → user gains admin capabilities
-4. **Last Admin Guard**: Admin tries to demote self → blocked with error
 
 ### Test Database
 
@@ -884,15 +1002,22 @@ export async function logAuditEvent(
 # Use separate test database
 DATABASE_URL="postgresql://localhost:5432/goodteams_test"
 
-# Reset before each test suite
+# Reset before suites
 npx prisma migrate reset --force
 ```
 
+### Key E2E Scenarios
+
+1. **First Admin**: Create org via Entra → becomes admin → access admin pages
+2. **Invite User**: Admin invites → email → accept → user in org
+3. **Role Change**: Admin promotes → user gains capabilities
+4. **Last Admin Guard**: Try to demote last admin → blocked
+
 ---
 
-## Implementation Log
+## 7. Implementation Log
 
-> Track progress, decisions, and blockers here
+> Track progress, decisions, blockers
 
 ### Format
 
@@ -901,41 +1026,40 @@ npx prisma migrate reset --force
 
 **Status:** ✅ Complete | 🔄 In Progress | ❌ Blocked | ⏸️ Paused
 
-**What was done:**
-- Bullet points of work completed
+**Work completed:**
+- Bullet points
 
-**Decisions made:**
-- Any architectural or design decisions
+**Decisions:**
+- Any choices made
 
 **Blockers:**
-- Issues preventing progress
+- Issues
 
-**Next steps:**
-- What comes next
+**Next:**
+- What's next
 
-**Commit:** `abc123` (if applicable)
+**Commit:** `abc123`
 ```
 
 ---
 
-### 2026-02-02 — Planning Complete
+### 2026-02-02 — Planning v2
 
 **Status:** ✅ Complete
 
-**What was done:**
-- Created RBAC-STAFF-ONBOARDING.md spec
-- Created this implementation plan
-- Analyzed existing goodteams-ai codebase
-- Identified existing vs missing components
+**Work completed:**
+- Rewrote implementation plan for building INTO goodteams-colab
+- Mapped existing OpenClaw structure
+- Defined foundation work (DB, API, Entra)
+- Aligned with GOODTEAMS-STRATEGY.md phases
 
-**Decisions made:**
-- Upgrade goodteams-ai as platform layer (not build new)
-- Use existing invitation system as foundation
-- Add explicit permissions on top of role-based implicit permissions
+**Decisions:**
+- Use Prisma for TypeScript-native ORM
+- Build platform layer as `src/platform/`
+- Extend existing gateway HTTP server with platform routes
 
-**Next steps:**
-- Verify prerequisites (local dev environment)
-- Begin Phase 1: Database & Core Models
+**Next:**
+- Start Foundation F1: Database layer
 
 ---
 
@@ -943,36 +1067,68 @@ npx prisma migrate reset --force
 
 ---
 
-## Appendix: Quick Reference
+## Quick Reference
 
-### File Locations
+### New Directory Structure
 
-| Component | Path |
-|-----------|------|
-| Prisma Schema | `platform/app/prisma/schema.prisma` |
-| Wasp Config | `platform/app/main.wasp` |
-| Auth (TS) | `platform/app/src/auth/` |
-| Auth (Python) | `engine/app/core/auth.py` |
-| Organization Ops | `platform/app/src/organization/operations.ts` |
-| Invitation Ops | `platform/app/src/invitation/operations.ts` |
-| Entra Integration | `platform/app/src/entra/` |
+```
+src/platform/
+├── db/
+│   ├── schema.prisma
+│   ├── client.ts
+│   └── migrations/
+├── api/
+│   ├── index.ts
+│   ├── middleware/
+│   │   ├── auth.ts
+│   │   └── permissions.ts
+│   └── routes/
+│       ├── org.ts
+│       ├── users.ts
+│       ├── invitations.ts
+│       ├── skills.ts
+│       └── auth.ts
+├── auth/
+│   ├── permissions.ts
+│   ├── checkPermission.ts
+│   ├── adminGuard.ts
+│   └── entra/
+│       ├── client.ts
+│       ├── consent.ts
+│       └── tokens.ts
+├── audit/
+│   └── logger.ts
+└── __tests__/
+```
 
 ### Commands
 
 ```bash
-# Platform
-cd platform/app
-wasp start              # Run dev server
-wasp db migrate-dev     # Run migrations
-wasp test               # Run tests
-
-# Engine
-cd engine
-uvicorn app.main:app --reload
-pytest                  # Run tests
-
 # Database
-npx prisma studio       # Visual DB browser
-npx prisma migrate dev  # Create migration
-npx prisma db push      # Push schema (no migration)
+npx prisma migrate dev --name <name>  # Create migration
+npx prisma db push                     # Push schema (dev)
+npx prisma studio                      # Visual browser
+
+# Tests
+pnpm test                              # All tests
+pnpm test:unit                         # Unit only
+pnpm test:integration                  # Integration only
+
+# Dev
+pnpm dev                               # Start gateway with platform
+```
+
+### Environment Variables
+
+```bash
+# Database
+DATABASE_URL="postgresql://user:pass@localhost:5432/goodteams"
+
+# Entra
+ENTRA_CLIENT_ID="..."
+ENTRA_CLIENT_SECRET="..."
+ENTRA_TENANT_ID="common"  # Multi-tenant
+
+# App
+APP_URL="https://app.goodteams.ai"
 ```
