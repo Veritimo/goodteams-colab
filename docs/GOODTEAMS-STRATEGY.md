@@ -61,7 +61,7 @@ OpenClaw follows a **gateway-centric architecture** with the following major com
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Desktop Agent Extension:** The architecture supports a Windows-first **Desktop Agent** that connects as a "node" to the gateway, enabling control of native Windows applications (Excel, Word, Outlook) via UI Automation and COM, alongside browser automation via Playwright. This provides visual collaboration capabilities where users can watch AI work in real-time. See [DESKTOP-AGENT-ARCHITECTURE.md](./DESKTOP-AGENT-ARCHITECTURE.md) for full specification.
+**Desktop Agent Extension:** The architecture supports a Windows-first **Desktop Agent** that connects as a "node" to the gateway, enabling control of native Windows applications (Powerpoint, Excel, Word, Outlook) via UI Automation and COM, alongside browser automation via Playwright. This provides visual collaboration capabilities where users can watch AI work in real-time. See [DESKTOP-AGENT-ARCHITECTURE.md](./DESKTOP-AGENT-ARCHITECTURE.md) for full specification.
 
 ### 1.2 Core Modules
 
@@ -429,17 +429,48 @@ const sharepointPlugin: OpenClawPluginDefinition = {
 #### Database & CRM Access
 | Integration | Priority | Complexity | Notes |
 |-------------|----------|------------|-------|
+| **SQL Server (T-SQL)** | P0 | Medium | Enterprise primary, query builder, schema hints |
+| **PostgreSQL** | P0 | Medium | Cloud/startup primary, query builder, schema hints |
 | Salesforce | P1 | High | REST API, SOQL queries |
 | HubSpot | P1 | Medium | HubSpot API |
 | Microsoft Dynamics | P1 | High | Dataverse API |
-| Generic SQL | P0 | Medium | Query builder, connection pooling |
 | Snowflake | P2 | Medium | Snowflake connector |
+
+**Query Builder with Schema Hints:**
+The SQL integration uses a schema-aware query builder that leverages **SchemaHints** — a growing formal structure of business rules expressed in technical terms:
+
+```typescript
+type SchemaHints = {
+  tables: {
+    [tableName: string]: {
+      description: string;           // Human-readable purpose
+      businessContext: string;       // Domain-specific meaning
+      primaryKey: string[];
+      foreignKeys: ForeignKeyHint[];
+      commonJoins: JoinHint[];       // Pre-defined join patterns
+      sensitiveColumns: string[];    // PII, financial, etc.
+      defaultFilters?: string;       // e.g., "is_deleted = 0"
+    };
+  };
+  businessRules: {
+    [ruleName: string]: {
+      description: string;
+      sqlFragment: string;           // Reusable WHERE/JOIN clause
+      appliesTo: string[];           // Table names
+    };
+  };
+  terminology: {
+    [businessTerm: string]: string;  // "active customer" → "status = 'A' AND last_order_date > DATEADD(year, -1, GETDATE())"
+  };
+};
+```
 
 **Security Considerations:**
 - Read-only by default, write requires explicit permission
-- Query result size limits
-- Sensitive field masking
-- Query logging and analysis
+- Query result size limits and timeout enforcement
+- Sensitive column masking (PII, financial data)
+- Query logging, analysis, and audit trail
+- Schema hints flag sensitive columns for automatic redaction
 
 #### Document Creation
 | Capability | Priority | Complexity | Notes |
@@ -649,10 +680,14 @@ export const googleWorkspacePlugin: OpenClawPluginDefinition = {
 
 **Location:** New extension `extensions/sql-connector/`
 
+**Supported Databases (v1):**
+- **SQL Server (T-SQL)** — Primary enterprise target, full T-SQL dialect support
+- **PostgreSQL** — Primary cloud/startup target, full PL/pgSQL support
+
 ```typescript
 export const sqlConnectorPlugin: OpenClawPluginDefinition = {
   id: "sql-connector",
-  name: "Database Connector",
+  name: "Enterprise Database Connector",
   
   configSchema: {
     jsonSchema: {
@@ -662,22 +697,56 @@ export const sqlConnectorPlugin: OpenClawPluginDefinition = {
           type: "object",
           properties: {
             name: { type: "string" },
-            driver: { enum: ["postgres", "mysql", "mssql", "snowflake"] },
+            driver: { enum: ["mssql", "postgres"] },  // T-SQL and PostgreSQL
             connectionString: { type: "string" },
             readOnly: { type: "boolean", default: true },
             maxRowsPerQuery: { type: "number", default: 1000 },
+            timeoutMs: { type: "number", default: 30000 },
+            schemaHintsPath: { type: "string" },  // Path to schema hints file
           }
         }
+      },
+      schemaHints: {
+        type: "object",
+        description: "Business rules and terminology expressed as SQL patterns",
+        // See SchemaHints type definition in Section 3
       }
     }
   },
   
   register: (api) => {
-    api.registerTool(sqlQueryTool);
-    api.registerTool(sqlSchemaTool);
-    api.on("before_tool_call", sqlQueryValidator);
-    api.on("after_tool_call", sqlAuditLogger);
+    // Core tools
+    api.registerTool(sqlQueryTool);          // Execute queries via query builder
+    api.registerTool(sqlSchemaTool);         // Introspect schema
+    api.registerTool(sqlSchemaHintsTool);    // Read/update schema hints
+    
+    // Query builder integration
+    api.registerTool(sqlBuildQueryTool);     // AI builds query, returns for review
+    api.registerTool(sqlExplainQueryTool);   // Explain query plan
+    
+    // Lifecycle hooks
+    api.on("before_tool_call", sqlQueryValidator);   // Validate against schema hints
+    api.on("before_tool_call", sqlSensitiveColumnMasker);  // Redact PII
+    api.on("after_tool_call", sqlAuditLogger);       // Full audit trail
   }
+};
+
+// Query builder with schema hints integration
+type SqlBuildQueryParams = {
+  connection: string;
+  intent: string;              // Natural language: "Find all active customers who ordered last month"
+  useSchemaHints: boolean;     // Apply business rules from schema hints
+  explain: boolean;            // Include query explanation
+  dryRun: boolean;             // Build but don't execute
+};
+
+type SqlBuildQueryResult = {
+  sql: string;                 // Generated SQL (T-SQL or PostgreSQL dialect)
+  dialect: "tsql" | "pgsql";
+  explanation: string;         // Human-readable explanation
+  schemaHintsApplied: string[];  // Which business rules were used
+  estimatedRows?: number;
+  warnings?: string[];         // e.g., "Query may be slow without index on X"
 };
 ```
 
@@ -796,10 +865,10 @@ See [DESKTOP-AGENT-ARCHITECTURE.md](./DESKTOP-AGENT-ARCHITECTURE.md) for complet
 │  │  │   MS Graph     │  │    Google      │  │      SQL           │ │ │
 │  │  │  Connector     │  │   Workspace    │  │   Connector        │ │ │
 │  │  │                │  │   Connector    │  │                    │ │ │
-│  │  │ • SharePoint   │  │ • Drive        │  │ • PostgreSQL       │ │ │
-│  │  │ • OneDrive     │  │ • Docs/Sheets  │  │ • MySQL            │ │ │
-│  │  │ • Outlook      │  │ • Gmail        │  │ • SQL Server       │ │ │
-│  │  │ • Teams        │  │ • Calendar     │  │ • Snowflake        │ │ │
+│  │  │ • SharePoint   │  │ • Drive        │  │ • SQL Server (T-SQL)│ │ │
+│  │  │ • OneDrive     │  │ • Docs/Sheets  │  │ • PostgreSQL       │ │ │
+│  │  │ • Outlook      │  │ • Gmail        │  │ • Query Builder    │ │ │
+│  │  │ • Teams        │  │ • Calendar     │  │ • SchemaHints      │ │ │
 │  │  │ • Planner      │  │ • Chat         │  │                    │ │ │
 │  │  └────────────────┘  └────────────────┘  └────────────────────┘ │ │
 │  │                                                                  │ │
@@ -1036,17 +1105,25 @@ type TenantConfig = OpenClawConfig & {
 **Deliverable:** Full Google Workspace productivity integration
 
 #### Phase 4: Database & CRM (Weeks 25-32)
-**Goal:** Data access and CRM integration
+**Goal:** Enterprise data access with intelligent query building
 
 | Task | Effort | Priority |
 |------|--------|----------|
-| SQL connector plugin | 2 weeks | P0 |
-| Query builder and validation | 1 week | P0 |
+| SQL Server (T-SQL) connector | 2 weeks | P0 |
+| PostgreSQL connector | 1 week | P0 |
+| Schema-aware query builder | 2 weeks | P0 |
+| SchemaHints system (business rules → SQL) | 1 week | P0 |
 | Salesforce connector | 2 weeks | P1 |
 | HubSpot connector | 1 week | P1 |
-| Microsoft Dynamics connector | 2 weeks | P2 |
 
-**Deliverable:** Database and CRM access with security controls
+**SchemaHints Concept:**
+SchemaHints is a growing formal structure that captures business rules in technical terms:
+- Maps business terminology to SQL patterns ("active customer" → `status='A' AND last_order > DATEADD(year,-1,GETDATE())`)
+- Defines safe join patterns and common query templates
+- Flags sensitive columns for automatic masking
+- Enables AI to generate accurate, business-aware queries
+
+**Deliverable:** T-SQL and PostgreSQL access with schema-aware query builder and business rules engine
 
 #### Phase 5: Multi-Tenancy (Weeks 33-40)
 **Goal:** SaaS-ready multi-tenant architecture
@@ -1322,7 +1399,10 @@ type GoodTeamsEnterpriseConfig = OpenClawConfig & {
 - [ ] Outlook email/calendar
 - [ ] Google Drive integration
 - [ ] Gmail integration
-- [ ] SQL connector (PostgreSQL, MySQL, SQL Server)
+- [ ] SQL Server (T-SQL) connector with query builder
+- [ ] PostgreSQL connector with query builder
+- [ ] SchemaHints system (business rules → SQL patterns)
+- [ ] Sensitive column masking and audit logging
 - [ ] Salesforce basic integration
 - [ ] Document generation (PPTX, XLSX, DOCX)
 
