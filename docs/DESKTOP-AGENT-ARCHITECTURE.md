@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This document outlines the architecture for a **Windows-first desktop agent** that enables real-time visual collaboration between AI assistants and enterprise users. The agent extends GoodTeams' capabilities beyond browser automation to native Windows applications (Excel, Word, Outlook, project management tools, etc.) while providing users with a transparent, observable view of AI actions.
+This document outlines the architecture for a **Windows-first desktop agent** that enables real-time visual collaboration between AI assistants and enterprise users. The agent extends GoodTeams' capabilities beyond browser automation to native Windows applications (Powerpoint, Excel, Word, Outlook, project management tools, etc.) while providing users with a transparent, observable view of AI actions.
 
 **Key Value Proposition:** Users can watch the AI work in real-time on their actual desktop, building trust and enabling seamless human-AI collaboration on complex business tasks.
 
@@ -37,7 +37,7 @@ This document outlines the architecture for a **Windows-first desktop agent** th
 
 | Goal | Description | Priority |
 |------|-------------|----------|
-| **Windows Native** | Control Excel, Word, Outlook, and other Windows apps | P0 |
+| **Windows Native** | Control Powerpoint, Excel, Word, Outlook, and other Windows apps | P0 |
 | **Visual Collaboration** | Users see AI actions in real-time | P0 |
 | **Enterprise Ready** | Integrate with existing GoodTeams gateway/auth | P0 |
 | **Low Friction Install** | Single installer, minimal IT involvement | P1 |

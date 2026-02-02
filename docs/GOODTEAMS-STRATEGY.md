@@ -32,6 +32,7 @@ OpenClaw is a mature, well-architected personal AI assistant with sophisticated 
    - [Appendix D: Desktop Agent Architecture](#appendix-d-desktop-agent-architecture)
    - [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth-architecture)
    - [Appendix F: Google Workspace Auth Architecture](#appendix-f-google-workspace-auth-architecture)
+   - [Appendix G: Multi-Tenant Architecture](#appendix-g-multi-tenant-architecture)
 
 ---
 
@@ -1069,16 +1070,19 @@ type TenantConfig = OpenClawConfig & {
 **Deliverable:** Clean GoodTeams codebase with enterprise-only focus
 
 #### Phase 1: Security Foundation (Weeks 5-10)
-**Goal:** Enterprise-grade authentication and authorization
+**Goal:** Enterprise-grade authentication, authorization, and multi-tenant infrastructure
 
 | Task | Effort | Priority |
 |------|--------|----------|
+| Deploy multi-tenant control plane (Tenant Registry, Gateway Registry, Provisioner) | 2 weeks | P0 |
 | Implement OIDC authentication (Entra ID/MSAL) | 2 weeks | P0 |
 | Multi-tenant app registration pattern | 1 week | P0 |
 | Admin consent flow for org-level tenant linking | 1 week | P0 |
 | Token storage infrastructure (encrypted vault) | 1 week | P0 |
 | Build RBAC system | 2 weeks | P0 |
 | Create audit logging infrastructure | 1 week | P0 |
+
+**Multi-Tenant Foundation:** Phase 1 includes deploying the gateway-per-tenant architecture that provides process-level isolation for all tenants. This foundational infrastructure enables secure, isolated environments for all subsequent phases. See [Appendix G: Multi-Tenant Architecture](#appendix-g-multi-tenant-architecture) for complete technical specification.
 
 **Token Storage Note:** The encrypted vault infrastructure supports credentials for BOTH Microsoft 365 (Entra ID tokens) and Google Workspace (OAuth tokens + service account keys). This shared foundation enables Phase 2 (Microsoft) and Phase 3 (Google) integrations.
 
@@ -1195,16 +1199,27 @@ Microsoft Dynamics 365 and Dataverse integration reuses the Entra tokens establi
 **Deliverable:** T-SQL and PostgreSQL access with schema-aware query builder and business rules engine
 
 #### Phase 5: Multi-Tenancy (Weeks 33-40)
-**Goal:** SaaS-ready multi-tenant architecture
+**Goal:** SaaS-ready multi-tenant architecture at scale
+
+**Foundation:** This phase builds on the gateway-per-tenant architecture deployed in Phase 1. The V1 process-isolation model is already operational; Phase 5 focuses on scaling, operational tooling, and advanced tenant management.
 
 | Task | Effort | Priority |
 |------|--------|----------|
-| Tenant isolation implementation | 3 weeks | P0 |
-| Database migration to PostgreSQL | 2 weeks | P0 |
-| Per-tenant configuration | 1 week | P0 |
-| Admin portal | 2 weeks | P1 |
+| Admin portal for tenant management | 2 weeks | P0 |
+| Automated VM scaling and capacity management | 2 weeks | P0 |
+| Tenant migration tooling (move between VMs) | 1 week | P0 |
+| Enhanced monitoring and alerting per tenant | 1 week | P0 |
+| Backup and disaster recovery automation | 1 week | P1 |
+| Cost tracking and billing integration | 1 week | P1 |
 
-**Deliverable:** Multi-tenant SaaS platform
+**Architecture Reference:** See [MULTI-TENANT-ARCHITECTURE.md](./MULTI-TENANT-ARCHITECTURE.md) for complete technical specification including:
+- Control plane component specs (Tenant Registry, Gateway Registry, Provisioner)
+- Deployment model (systemd, port allocation, health checks)
+- Scaling strategy (VM sizing, tenant migration, cost projections)
+- Security model (process isolation, workspace isolation, secrets management)
+- Evolution path (V1 process → V2 container → V3 dedicated VM)
+
+**Deliverable:** Production-ready multi-tenant SaaS platform with operational tooling
 
 #### Phase 6: Enterprise Features (Weeks 41-48)
 **Goal:** Enterprise-grade operational features
@@ -1778,6 +1793,81 @@ For complete details including:
 - Security considerations
 
 See: **[GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md](./GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md)**
+
+---
+
+## Appendix G: Multi-Tenant Architecture
+
+GoodTeams achieves multi-tenancy through **gateway-per-tenant process isolation** — each tenant gets their own OpenClaw gateway process. This design preserves OpenClaw's single-tenant architecture while providing strong tenant isolation.
+
+### Architecture Summary
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│                              CONTROL PLANE                                 │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────────────────┐  │
+│  │  Tenant        │  │   Gateway      │  │     Provisioner            │  │
+│  │  Registry      │  │   Registry     │  │     Service                │  │
+│  │  (Postgres)    │  │   (Postgres)   │  │  (spawn/kill/monitor)      │  │
+│  └────────────────┘  └────────────────┘  └────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                           INGRESS ROUTER                                   │
+│   tenant-a.goodteams.ai → vm-1:18001                                      │
+│   tenant-b.goodteams.ai → vm-1:18002                                      │
+└───────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                             COMPUTE TIER                                   │
+│  ┌──────────────────────────────────┐  ┌──────────────────────────────┐  │
+│  │            VM-1 (4GB)            │  │            VM-2 (4GB)         │  │
+│  │  ┌──────────┐ ┌──────────┐      │  │  ┌──────────┐ ┌──────────┐   │  │
+│  │  │ Gateway  │ │ Gateway  │      │  │  │ Gateway  │ │ Gateway  │   │  │
+│  │  │:18001    │ │:18002    │      │  │  │:18001    │ │:18002    │   │  │
+│  │  │Tenant A  │ │Tenant B  │      │  │  │Tenant C  │ │Tenant D  │   │  │
+│  │  └──────────┘ └──────────┘      │  │  └──────────┘ └──────────┘   │  │
+│  └──────────────────────────────────┘  └──────────────────────────────┘  │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Process isolation** | OS enforces memory separation; no shared state between tenants |
+| **No OpenClaw core changes** | OpenClaw remains single-tenant; we orchestrate multiple instances |
+| **VM pooling** | 5-10 tenants per VM for cost efficiency |
+| **systemd management** | Production-grade process supervision with auto-restart |
+| **Per-tenant workspaces** | Each tenant gets isolated `/tenants/{slug}/` directory |
+
+### Evolution Path
+
+| Version | Model | Use Case |
+|---------|-------|----------|
+| **V1** | Process isolation | Most SaaS customers (current) |
+| **V2** | Container isolation (K8s) | Stronger isolation needs |
+| **V3** | VM-per-tenant | Enterprise/compliance requirements |
+
+### Integration with Strategy
+
+- **Phase 1**: Deploy control plane and initial VM fleet as foundational infrastructure
+- **Phase 2-4**: Per-tenant credentials stored in vault; each gateway accesses only its tenant's secrets
+- **Phase 5**: Scale operations, migration tooling, admin portal
+- **Phase 7**: Desktop Agent connects to tenant-specific gateway
+
+### Full Specification
+
+For complete details including:
+- Component specifications (Tenant Registry, Gateway Registry, Provisioner)
+- Deployment model (systemd units, port allocation, health checks)
+- Scaling strategy (VM sizing, tenant migration, cost projections)
+- Security model (process isolation, workspace permissions, secrets management)
+- Operations (monitoring, logging, backup/recovery)
+
+See: **[MULTI-TENANT-ARCHITECTURE.md](./MULTI-TENANT-ARCHITECTURE.md)**
 
 ---
 
