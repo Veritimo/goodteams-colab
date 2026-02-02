@@ -2,10 +2,10 @@
  * Tests for platform API health endpoint
  */
 
-import { describe, expect, it } from "vitest";
-import { createPlatformApiHandler, PLATFORM_API_BASE_PATH } from "../index.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventEmitter } from "node:events";
+import { describe, expect, it } from "vitest";
+import { createPlatformApiHandler, PLATFORM_API_BASE_PATH } from "../index.js";
 
 /**
  * Create a mock request object
@@ -181,10 +181,10 @@ describe("Platform API Health Endpoint", () => {
   });
 });
 
-describe("Platform API Route Stubs", () => {
+describe("Platform API Implemented Routes (require auth)", () => {
   const handler = createPlatformApiHandler();
 
-  it("should return 501 Not Implemented for /api/platform/org", async () => {
+  it("should return 401 Unauthorized for /api/platform/org without auth", async () => {
     const req = createMockRequest({
       method: "GET",
       url: `${PLATFORM_API_BASE_PATH}/org`,
@@ -193,12 +193,12 @@ describe("Platform API Route Stubs", () => {
 
     await handler(req, res);
 
-    expect(res._statusCode).toBe(501);
+    expect(res._statusCode).toBe(401);
     const body = JSON.parse(res._body);
-    expect(body.error.code).toBe("NOT_IMPLEMENTED");
+    expect(body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("should return 501 Not Implemented for /api/platform/users", async () => {
+  it("should return 401 Unauthorized for /api/platform/users without auth", async () => {
     const req = createMockRequest({
       method: "GET",
       url: `${PLATFORM_API_BASE_PATH}/users`,
@@ -207,12 +207,12 @@ describe("Platform API Route Stubs", () => {
 
     await handler(req, res);
 
-    expect(res._statusCode).toBe(501);
+    expect(res._statusCode).toBe(401);
     const body = JSON.parse(res._body);
-    expect(body.error.code).toBe("NOT_IMPLEMENTED");
+    expect(body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("should return 501 Not Implemented for /api/platform/invitations", async () => {
+  it("should return 401 Unauthorized for /api/platform/invitations without auth", async () => {
     const req = createMockRequest({
       method: "GET",
       url: `${PLATFORM_API_BASE_PATH}/invitations`,
@@ -221,9 +221,9 @@ describe("Platform API Route Stubs", () => {
 
     await handler(req, res);
 
-    expect(res._statusCode).toBe(501);
+    expect(res._statusCode).toBe(401);
     const body = JSON.parse(res._body);
-    expect(body.error.code).toBe("NOT_IMPLEMENTED");
+    expect(body.error.code).toBe("UNAUTHORIZED");
   });
 });
 
