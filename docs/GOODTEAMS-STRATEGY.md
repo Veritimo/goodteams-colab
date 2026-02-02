@@ -30,6 +30,7 @@ OpenClaw is a mature, well-architected personal AI assistant with sophisticated 
    - [Appendix B: Enterprise Config Schema](#appendix-b-enterprise-config-schema)
    - [Appendix C: Migration Checklist](#appendix-c-migration-checklist)
    - [Appendix D: Desktop Agent Architecture](#appendix-d-desktop-agent-architecture)
+   - [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth-architecture)
 
 ---
 
@@ -1071,23 +1072,46 @@ type TenantConfig = OpenClawConfig & {
 
 | Task | Effort | Priority |
 |------|--------|----------|
-| Implement OIDC authentication | 2 weeks | P0 |
+| Implement OIDC authentication (Entra ID/MSAL) | 2 weeks | P0 |
+| Multi-tenant app registration pattern | 1 week | P0 |
+| Admin consent flow for org-level tenant linking | 1 week | P0 |
+| Token storage infrastructure (encrypted vault) | 1 week | P0 |
 | Build RBAC system | 2 weeks | P0 |
 | Create audit logging infrastructure | 1 week | P0 |
-| Add session management | 1 week | P0 |
+
+**SaaS Authentication Model:**
+GoodTeams uses a **multi-tenant Entra ID (Azure AD) application** — the canonical SaaS pattern:
+- **Developer registers app once** in their own Entra tenant (multi-tenant enabled)
+- **Customers authorize** via admin consent flow (links their Microsoft 365 tenant to GoodTeams)
+- **User SSO** via MSAL authorization code flow (delegated access)
+- **Tokens stored encrypted**, auto-refreshed via refresh token rotation
+
+See [Appendix E: Microsoft 365 Auth Architecture](#appendix-e-microsoft-365-auth-architecture) for full specification.
 
 **Deliverable:** Secure multi-user system with SSO support
 
 #### Phase 2: Microsoft 365 Integration (Weeks 11-18)
 **Goal:** Full Microsoft ecosystem support
 
+**Dependency:** Requires Phase 1 auth infrastructure (multi-tenant Entra app, token storage, admin consent flow)
+
 | Task | Effort | Priority |
 |------|--------|----------|
+| User authorization code flow (delegated access) | 1 week | P0 |
+| Token refresh service | 0.5 weeks | P0 |
 | MS Graph connector plugin | 2 weeks | P0 |
 | SharePoint/OneDrive tools | 2 weeks | P0 |
 | Outlook email/calendar tools | 2 weeks | P0 |
 | MS Teams channel enhancement | 1 week | P0 |
 | Document generation (PPTX, XLSX, DOCX) | 1 week | P1 |
+
+**Required Permissions (Delegated):**
+- `User.Read` — Basic user profile
+- `Sites.Read.All` — SharePoint sites and content
+- `Files.Read.All` — OneDrive and SharePoint files
+- `Calendars.Read` — Outlook calendar access
+- `Mail.ReadWrite` — Email read and write
+- `Mail.Send` — Send email on behalf of user
 
 **Deliverable:** Full Microsoft 365 productivity integration
 
@@ -1115,6 +1139,7 @@ type TenantConfig = OpenClawConfig & {
 | SchemaHints system (business rules → SQL) | 1 week | P0 |
 | Salesforce connector | 2 weeks | P1 |
 | HubSpot connector | 1 week | P1 |
+| Microsoft Dynamics/Dataverse connector | 1 week | P1 |
 
 **SchemaHints Concept:**
 SchemaHints is a growing formal structure that captures business rules in technical terms:
@@ -1122,6 +1147,11 @@ SchemaHints is a growing formal structure that captures business rules in techni
 - Defines safe join patterns and common query templates
 - Flags sensitive columns for automatic masking
 - Enables AI to generate accurate, business-aware queries
+
+**Dynamics/Dataverse Note:**
+Microsoft Dynamics 365 and Dataverse integration reuses the Entra tokens established in Phase 2 — same multi-tenant app, additional scopes. Access options:
+- **Dataverse Web API** — REST API at `https://{org}.crm.dynamics.com/api/data/v9.2`
+- **TDS Endpoint** — SQL-like access at `{org}.crm.dynamics.com:5558` (enables reuse of SQL connector patterns)
 
 **Deliverable:** T-SQL and PostgreSQL access with schema-aware query builder and business rules engine
 
@@ -1557,6 +1587,77 @@ The Desktop Agent is a Windows-first Electron application that extends GoodTeams
 For complete technical specification including component design, security model, and implementation details, see:
 
 **[DESKTOP-AGENT-ARCHITECTURE.md](./DESKTOP-AGENT-ARCHITECTURE.md)**
+
+---
+
+## Appendix E: Microsoft 365 Auth Architecture
+
+GoodTeams uses a **multi-tenant Entra ID (Azure AD) application** to integrate with Microsoft 365. This is the canonical SaaS pattern that enables single app registration, customer consent via admin flow, and delegated user access.
+
+### Architecture Summary
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Customer Enterprise                             │
+│                                                                      │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐            │
+│  │    Users      │  │  SharePoint   │  │   Dynamics    │            │
+│  │ (Entra IDs)   │  │   OneDrive    │  │   Dataverse   │            │
+│  └───────┬───────┘  └───────┬───────┘  └───────┬───────┘            │
+│          └──────────────────┼──────────────────┘                     │
+│                    Microsoft Graph API                               │
+└─────────────────────────────┼────────────────────────────────────────┘
+                              │
+               ┌──────────────┴──────────────┐
+               │                             │
+     ┌─────────▼─────────┐        ┌─────────▼─────────┐
+     │   Admin Consent   │        │   User Auth       │
+     │   (Org-level)     │        │   (User-level)    │
+     └─────────┬─────────┘        └─────────┬─────────┘
+               └──────────────┬──────────────┘
+                              │
+┌─────────────────────────────▼────────────────────────────────────────┐
+│                      GoodTeams Platform                               │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │                 Multi-tenant Entra App                           │ │
+│  │                                                                  │ │
+│  │  ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐   │ │
+│  │  │ Admin Consent   │ │ Auth Code Flow  │ │ Token Refresh   │   │ │
+│  │  │ (Org linking)   │ │ (User SSO)      │ │ (Auto-refresh)  │   │ │
+│  │  └─────────────────┘ └─────────────────┘ └─────────────────┘   │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Two Authentication Flows
+
+| Flow | Purpose | Trigger |
+|------|---------|---------|
+| **Admin Consent** | Link customer's M365 tenant to their GoodTeams org | Org admin clicks "Connect Microsoft 365" |
+| **User Authorization** | Get delegated access to individual user's data | User clicks "Link Microsoft Account" |
+
+### Key Capabilities
+
+- **MS Graph API** — SharePoint, OneDrive, Outlook, Teams, Planner
+- **Dynamics/Dataverse** — CRM data via same tokens (additional scopes)
+- **Delegated Access** — Actions on behalf of user (respects their permissions)
+- **Token Management** — Encrypted storage, automatic refresh
+
+### Alternative: M365 MCP Server
+
+For simpler deployments or rapid prototyping, the **Microsoft 365 MCP Server** provides M365 access via Model Context Protocol. However, native MSAL/Graph is recommended for production SaaS due to full control over auth flows, custom scoping, and complete audit trail.
+
+### Full Specification
+
+For complete details including:
+- Admin consent and user auth flow implementation
+- App registration configuration
+- Token storage and refresh patterns
+- Security considerations
+- Environment variables
+
+See: **[MICROSOFT-365-AUTH-ARCHITECTURE.md](./MICROSOFT-365-AUTH-ARCHITECTURE.md)**
 
 ---
 
