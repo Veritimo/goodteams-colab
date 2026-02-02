@@ -473,35 +473,46 @@ output_filtering:
 
 ## 6. RBAC Model
 
-GoodTeams implements Role-Based Access Control to ensure users and AI agents operate within appropriate permission boundaries.
+GoodTeams implements Role-Based Access Control to ensure users and AI agents operate within appropriate permission boundaries. 
+
+> **📘 For complete RBAC and staff onboarding details, see [RBAC-STAFF-ONBOARDING.md](./RBAC-STAFF-ONBOARDING.md)**
+
+This section provides a security-focused summary. The dedicated RBAC document covers:
+- Organization lifecycle and Entra integration requirements
+- Staff onboarding and invitation workflows
+- Permission system architecture
+- Admin functions (model management, skills, user management)
+- API specifications and database schema
 
 ### Role Definitions
 
 | Role | Description | Typical User |
 |------|-------------|--------------|
-| **Owner** | Full system control, billing, security settings | Founder, CTO |
-| **Admin** | User management, configuration, all features | IT Admin, Team Lead |
-| **Power User** | Advanced features, limited admin functions | Senior Employee |
-| **User** | Standard features, team collaboration | Employee |
-| **Viewer** | Read-only access to shared content | Contractor, Intern |
-| **External** | Limited access to specific shared items | Client, Partner |
+| **SUPER_ADMIN** | GoodTeams platform staff | Platform operators |
+| **ADMIN** | Organization administrator (≥1 required) | IT Admin, Team Lead |
+| **USER** | Standard team member | Employee |
+| **BILLING** | Billing & subscription access | Finance |
+| **VIEWER** | Read-only access | Contractor, Intern |
 
-### Permission Matrix
+### Key Security Constraints
 
-| Capability | Owner | Admin | Power User | User | Viewer | External |
-|------------|:-----:|:-----:|:----------:|:----:|:------:|:--------:|
-| Manage billing | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Manage users | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Configure guardrails | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| View audit logs | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Create integrations | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Use AI agents | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| Create content | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| View shared content | ✅ | ✅ | ✅ | ✅ | ✅ | ✅* |
-| External sharing | ✅ | ✅ | ✅ | 🟡 | ❌ | ❌ |
-| Approve HITL requests | ✅ | ✅ | ✅ | 🟡 | ❌ | ❌ |
+1. **Identity-First**: Organizations must complete Microsoft Entra admin consent before full functionality
+2. **Admin Continuity**: At least one ADMIN must exist per organization at all times
+3. **Least Privilege**: Users receive minimum permissions needed for their role
+4. **Audit Trail**: All permission changes logged with actor, target, and timestamp
 
-✅ = Allowed | 🟡 = Requires approval | ❌ = Denied | * = Only explicitly shared items
+### Permission Matrix (Summary)
+
+| Capability | SUPER_ADMIN | ADMIN | USER | BILLING | VIEWER |
+|------------|:-----------:|:-----:|:----:|:-------:|:------:|
+| Manage users | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Manage authorized models | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Manage skills & tools | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Configure guardrails | ✅ | ✅ | ❌ | ❌ | ❌ |
+| View audit logs | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Use AI agents | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Manage billing | ✅ | ✅ | ❌ | ✅ | ❌ |
+| View shared content | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ### AI Agent Permissions
 
@@ -692,6 +703,9 @@ INCIDENT DETECTED
 ## Appendix: Related Documents
 
 - [GoodTeams Strategy](./GOODTEAMS-STRATEGY.md) — Product vision and roadmap
+- [RBAC & Staff Onboarding](./RBAC-STAFF-ONBOARDING.md) — Complete RBAC system, organization lifecycle, invitation workflows
+- [Multi-Tenant Architecture](./MULTI-TENANT-ARCHITECTURE.md) — Tenant isolation and user session management
+- [Microsoft 365 Auth Architecture](./MICROSOFT-365-AUTH-ARCHITECTURE.md) — Entra integration details
 - [Technical Architecture](./TECHNICAL-ARCHITECTURE.md) — System design and infrastructure
 - [API Reference](./API-REFERENCE.md) — Integration specifications
 
