@@ -28,14 +28,14 @@ These represent substantial IP and should be migrated or re-architected for the 
 | Feature Area | goodteams-ai Status | goodteams-colab Status | Priority | Migration Complexity |
 |--------------|---------------------|------------------------|----------|---------------------|
 | **Colab (Artifact UI)** | ✅ Implemented (72KB React + 36KB Python) | ❌ Not mentioned | P0 | High |
-| **Visual Workflow Designer** | ✅ Implemented (React Flow) | ❌ Not mentioned | P1 | Medium |
+| **Visual Workflow Designer** | ✅ Implemented (React Flow) | ⚠️ Has primitives (cron, hooks, webhooks), no visual UI | P1 | Medium |
 | **RAG / Knowledge Base** | ✅ Implemented (pgvector) | ⚠️ Memory system exists, different architecture | P0 | Medium |
 | **Communication Rules** | ✅ Implemented | ❌ Not mentioned | P1 | Low |
 | **Tool Registry (Python)** | ✅ Implemented | ⚠️ OpenClaw has tools, different pattern | P1 | Medium |
 | **System Identity** | ✅ Implemented | ⚠️ OpenClaw has identity, partial overlap | P2 | Low |
 | **Authorized Models** | ✅ Implemented | ⚠️ OpenClaw has model config, different UX | P2 | Low |
 | **Dataverse/CRM** | ✅ Implemented (TDS endpoint) | ⚠️ Mentioned in strategy, not detailed | P1 | Medium |
-| **Workflow Triggers** | ✅ Multiple (Chat, Cron, Webhook, Exchange, SharePoint) | ⚠️ OpenClaw has cron, partial | P1 | Medium |
+| **Workflow Triggers** | ✅ Multiple (Chat, Cron, Webhook, Exchange, SharePoint) | ⚠️ Has cron + webhook, missing email/file watchers | P1 | Medium |
 | **Agent Projects** | ✅ Implemented (SharePoint-linked) | ❌ Not mentioned | P2 | Low |
 
 ---
@@ -113,7 +113,7 @@ Key architectural decisions:
 
 ---
 
-## 2. Visual Workflow Designer — **MAJOR GAP**
+## 2. Visual Workflow Designer — **ORCHESTRATION GAP**
 
 ### What goodteams-ai Has
 
@@ -144,15 +144,85 @@ A complete React Flow-based visual workflow builder:
 - Execution history with node inputs/outputs
 - Error handling and retries
 
-### What goodteams-colab Has
+### What goodteams-colab Has — **Solid Primitives**
 
-**Partial:** OpenClaw has cron jobs but no visual workflow builder.
+OpenClaw has the **building blocks** for workflows, but no visual designer:
+
+#### Cron Jobs (`src/cron/`, `docs/automation/cron-jobs.md`)
+```typescript
+// Schedule types
+- "at": one-shot timestamp (reminders)
+- "every": fixed interval (polling)
+- "cron": 5-field cron expression with timezone
+
+// Execution modes
+- sessionTarget: "main" → runs via heartbeat
+- sessionTarget: "isolated" → dedicated agent turn
+
+// Features
+- Delivery to channels (WhatsApp, Telegram, Discord, etc.)
+- Model and thinking level overrides
+- Job persistence across restarts
+```
+
+#### Hooks System (`docs/hooks.md`)
+```typescript
+// Event-driven automation
+- command:new, command:reset, command:stop
+- agent:bootstrap
+- gateway:startup
+- tool_result_persist (plugin API)
+
+// Planned events
+- session:start, session:end
+- message:sent, message:received
+```
+
+#### Webhooks (`docs/automation/webhook.md`)
+```typescript
+// External triggers
+POST /hooks/wake     → wake main session
+POST /hooks/agent    → isolated agent turn
+POST /hooks/<name>   → custom mapped hooks
+```
+
+#### Plugin System (`docs/plugin.md`)
+- Register tools, commands, services
+- Background services for long-running tasks
+- Auto-reply commands
+
+### Gap Analysis
+
+| Capability | goodteams-ai | OpenClaw |
+|------------|--------------|----------|
+| **Schedule jobs** | ✅ Cron triggers | ✅ Cron jobs |
+| **Webhook triggers** | ✅ Webhook node | ✅ Webhook hooks |
+| **Event hooks** | ⚠️ Limited | ✅ Hooks system |
+| **Visual designer** | ✅ React Flow UI | ❌ None |
+| **Complex branching** | ✅ Condition nodes | ❌ None |
+| **Iteration/loops** | ✅ Iterator node | ❌ None |
+| **SQL nodes** | ✅ Generator/Executor/Explainer | ❌ Would need tools |
+| **Email triggers** | ✅ Exchange watcher | ❌ Gmail only (via hook) |
+| **File triggers** | ✅ SharePoint watcher | ❌ None |
+| **Execution history** | ✅ Full logs | ⚠️ Cron run logs only |
+| **Workflow versioning** | ✅ Yes | ❌ None |
+| **Builder Agent** | ✅ AI builds workflows | ❌ None |
 
 ### Recommendation
 
-**Add to strategy:** Either:
-1. Build new workflow designer as GoodTeams extension, or
-2. Integrate with existing workflow tools (n8n, Windmill) via plugin
+**Build the Visual Workflow Designer on OpenClaw's primitives:**
+
+1. **Port React Flow designer** — Bring over the visual editor UI
+2. **Create workflow execution engine** — Leverage OpenClaw's plugin system for background execution
+3. **Map nodes to OpenClaw capabilities:**
+   - Trigger nodes → cron jobs + webhooks + new watchers
+   - Agent nodes → isolated agent turns
+   - Tool nodes → OpenClaw tools
+   - Condition/Iterator → new orchestration layer
+4. **Add missing triggers:**
+   - Exchange/Outlook email watcher (extend Gmail hook pattern)
+   - SharePoint/OneDrive file watcher (via Graph API polling or webhooks)
+5. **Execution history** — Store run logs in database with node-level detail
 
 ---
 
@@ -348,8 +418,8 @@ OpenClaw has a comprehensive TypeScript tool system:
 | **P0** | Colab (Artifact UI) | High | Critical | Port as core feature |
 | **P0** | Knowledge Base (RAG) | Medium | Critical | Hybrid with OpenClaw memory |
 | **P1** | Communication Rules | Low | High | Add to enterprise phase |
-| **P1** | Visual Workflows | Medium | High | Build or integrate |
-| **P1** | Tool Registry | Medium | High | Port critical tools |
+| **P1** | Visual Workflows | Medium | High | **Build on OpenClaw primitives** |
+| **P1** | Tool Registry | Medium | High | Port critical tools to TypeScript |
 | **P2** | System Identity | Low | Medium | Extend OpenClaw identity |
 | **P2** | Authorized Models | Low | Medium | Add to multi-tenancy |
 | **P2** | Agent Projects | Low | Medium | Future consideration |
@@ -361,15 +431,69 @@ OpenClaw has a comprehensive TypeScript tool system:
 ### Add New Phases
 
 **Phase 8: Colab — Collaborative Knowledge Work (Weeks 67-82)**
-- Port artifact/block model
-- Implement PREE execution
-- Build tripane Inspector UI
-- Integrate with OpenClaw sessions
+- Port artifact/block model to TypeScript
+- Implement PREE execution engine
+- Build tripane Inspector UI (Context/Stage/Control)
+- Integrate with OpenClaw sessions and tools
+- Block-level accept/reject with semantic diff
 
-**Phase 9: Visual Automation (Weeks 83-90)**
-- React Flow workflow designer
-- Trigger extensibility (webhook, email, file watcher)
-- Execution engine with job queue
+**Phase 9: Visual Workflow Automation (Weeks 83-94)**
+
+Build a complete visual workflow system on OpenClaw's existing primitives:
+
+| Week | Milestone | Deliverable |
+|------|-----------|-------------|
+| 83-84 | **Foundation** | Workflow data model, persistence (PostgreSQL) |
+| 85-86 | **React Flow Designer** | Visual editor with node palette, canvas, connections |
+| 87-88 | **Core Nodes** | Trigger, Agent, Condition, Communication nodes |
+| 89-90 | **Execution Engine** | Job queue, node execution, error handling |
+| 91-92 | **Advanced Nodes** | Iterator, SQL Generator/Executor, Tool nodes |
+| 93-94 | **Triggers & History** | Email/file watchers, execution logs, debugging UI |
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Visual Workflow Designer                      │
+│                     (React Flow + UI)                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │                   Workflow Engine                            ││
+│  │  ┌───────────┐  ┌───────────┐  ┌───────────┐               ││
+│  │  │   Node    │  │ Execution │  │  History  │               ││
+│  │  │  Registry │  │   Queue   │  │   Store   │               ││
+│  │  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘               ││
+│  └────────┼──────────────┼──────────────┼──────────────────────┘│
+│           │              │              │                        │
+│  ┌────────▼──────────────▼──────────────▼──────────────────────┐│
+│  │              OpenClaw Primitives Layer                       ││
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        ││
+│  │  │  Cron   │  │ Webhooks│  │  Hooks  │  │ Plugins │        ││
+│  │  │  Jobs   │  │         │  │  System │  │  Tools  │        ││
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘        ││
+│  └──────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Node Types to Build:**
+| Node | Maps To | Implementation |
+|------|---------|----------------|
+| Trigger (Cron) | OpenClaw cron jobs | Use existing cron system |
+| Trigger (Webhook) | OpenClaw webhooks | Use existing webhook hooks |
+| Trigger (Email) | New | Graph API subscription or polling |
+| Trigger (SharePoint) | New | Graph API webhooks or polling |
+| Agent | Isolated agent turn | Use existing sessions_spawn pattern |
+| Condition | New | JavaScript expression evaluator |
+| Iterator | New | Loop over array, spawn sub-executions |
+| SQL Generator | SchemaHints + LLM | Use Phase 4 query builder |
+| SQL Executor | Database connector | Use Phase 4 SQL connector |
+| Communication | OpenClaw channels | Use existing message tool |
+| Tool | OpenClaw tools | Use existing tool registry |
+
+**Builder Agent (stretch goal):**
+- AI that builds workflows from natural language
+- Uses workflow schema as tool parameters
+- Generates node graph + connections
 
 ### Update Existing Phases
 
