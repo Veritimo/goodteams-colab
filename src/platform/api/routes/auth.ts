@@ -353,9 +353,39 @@ async function handleLoginCallback(
       });
     }
 
-    // TODO: Create session (Phase 2B handles session middleware)
-    const successUrl = stateData.returnUrl || "/dashboard";
-    redirect(res, successUrl);
+    // Generate a stub-format token for API access
+    // This allows using the same auth middleware until proper JWT sessions are implemented
+    const tokenPayload = {
+      id: user.id,
+      email: user.email,
+      name: user.username || user.email.split("@")[0],
+      orgId: user.organizationId || "",
+      role: user.role.toLowerCase(),
+    };
+    const stubToken = `stub:${Buffer.from(JSON.stringify(tokenPayload)).toString("base64")}`;
+
+    // Check if client wants JSON response (API client) or redirect (browser)
+    const acceptHeader = req.headers.accept || "";
+    if (acceptHeader.includes("application/json")) {
+      sendJson(res, {
+        success: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.username,
+          role: user.role,
+          organizationId: user.organizationId,
+        },
+        token: stubToken,
+        message: "Login successful. Use the token in Authorization: Bearer <token> header.",
+      });
+      return;
+    }
+
+    // For browser: redirect with token in URL (temporary until UI is built)
+    const successUrl = stateData.returnUrl || "/";
+    const separator = successUrl.includes("?") ? "&" : "?";
+    redirect(res, `${successUrl}${separator}token=${encodeURIComponent(stubToken)}&login=success`);
   } catch (error) {
     console.error("User login callback failed:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
