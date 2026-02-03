@@ -52,8 +52,18 @@ npx prisma db push
 
 ```bash
 cd ~/Repos/goodteams-colab/goodteams-colab
-node openclaw.mjs --profile goodteams gateway --port 19100 --allow-unconfigured
+
+# Option A: With a generated token (more secure)
+TOKEN=$(openssl rand -hex 32)
+echo "Gateway token: $TOKEN"  # Save this if you need to connect clients
+node openclaw.mjs --profile goodteams gateway --port 19100 --allow-unconfigured --token "$TOKEN"
+
+# Option B: Without gateway auth (simpler for local dev)
+node openclaw.mjs --profile goodteams gateway --port 19100 --allow-unconfigured --auth none
 ```
+
+> **Note:** The `--token` or `--auth none` flag is for the OpenClaw gateway's internal auth.
+> This is separate from the Platform API auth (Entra SSO / stub tokens).
 
 Keep this terminal open. You should see:
 ```
@@ -320,6 +330,15 @@ Error:
 ## 7. Troubleshooting
 
 ### Gateway Won't Start
+
+**"Gateway auth is set to token, but no token is configured"**
+```bash
+# Either generate a token
+node openclaw.mjs --profile goodteams gateway --port 19100 --allow-unconfigured --token "$(openssl rand -hex 32)"
+
+# Or disable gateway auth for local dev
+node openclaw.mjs --profile goodteams gateway --port 19100 --allow-unconfigured --auth none
+```
 
 **"gateway already running"**
 ```bash
