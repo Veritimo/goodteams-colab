@@ -8,7 +8,7 @@
  * Run: pnpm tsx scripts/e2e-tests.ts
  *
  * Prerequisites:
- *   - Platform server running on PORT (default 3000)
+ *   - Platform server running on PORT (default 19100)
  *   - PostgreSQL database accessible
  */
 
@@ -18,7 +18,7 @@ import { randomUUID } from "node:crypto";
 // CONFIGURATION
 // =============================================================================
 
-const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:3000";
+const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:19100";
 const API_PREFIX = "/api/platform";
 
 // Test data
