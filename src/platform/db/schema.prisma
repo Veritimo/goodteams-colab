@@ -75,9 +75,40 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // OAuth tokens
+  tokens UserToken[]
+
   @@index([organizationId])
   @@index([externalId])
   @@index([email])
+}
+
+// =============================================================================
+// USER OAUTH TOKENS
+// =============================================================================
+
+model UserToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  provider      String   // "microsoft" | "google"
+  accessToken   String   @db.Text  // Encrypted
+  refreshToken  String?  @db.Text  // Encrypted
+  expiresAt     DateTime
+  scopes        String[] // Array of granted scopes
+  
+  // Provider-specific identifiers
+  providerUserId  String?  // Microsoft OID or Google sub
+  providerTenantId String? // Microsoft tenant ID
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+  @@index([provider])
+  @@index([expiresAt])
 }
 
 // =============================================================================

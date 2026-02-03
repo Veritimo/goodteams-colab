@@ -149,21 +149,43 @@ export async function storeUserTokens(
   },
 ): Promise<void> {
   const encryptedAccess = encrypt(tokens.accessToken);
-  const encryptedRefresh = tokens.refreshToken ? encrypt(tokens.refreshToken) : null;
+  const encryptedRefresh = tokens.refreshToken ? encrypt(tokens.refreshToken) : undefined;
 
+  // Update user's external ID
   await prisma.user.update({
     where: { id: userId },
     data: {
       externalId: tokens.microsoftId,
-      // Note: We need to add these fields to the User model
-      // For now, we'll store in a separate table or JSON field
-      // This is a placeholder - actual implementation depends on schema
     },
   });
 
-  // Store tokens in a dedicated table (to be added in migration)
-  // For now, we'll use the User model's externalId to track MS identity
-  // Full token storage requires adding UserToken model
+  // Upsert the token record
+  await prisma.userToken.upsert({
+    where: {
+      userId_provider: {
+        userId,
+        provider: "microsoft",
+      },
+    },
+    update: {
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
+      expiresAt: tokens.expiresOn,
+      scopes: tokens.scopes || [],
+      providerUserId: tokens.microsoftId,
+      providerTenantId: tokens.tenantId,
+    },
+    create: {
+      userId,
+      provider: "microsoft",
+      accessToken: encryptedAccess,
+      refreshToken: encryptedRefresh,
+      expiresAt: tokens.expiresOn,
+      scopes: tokens.scopes || [],
+      providerUserId: tokens.microsoftId,
+      providerTenantId: tokens.tenantId,
+    },
+  });
 }
 
 /**
@@ -173,17 +195,32 @@ export async function storeUserTokens(
  * Returns null if user has no tokens or refresh fails.
  */
 export async function getValidUserTokens(userId: string): Promise<DecryptedTokens | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
+  const tokenRecord = await prisma.userToken.findUnique({
+    where: {
+      userId_provider: {
+        userId,
+        provider: "microsoft",
+      },
+    },
   });
 
-  if (!user || !user.externalId) {
+  if (!tokenRecord) {
     return null;
   }
 
-  // TODO: Implement full token retrieval when UserToken model is added
-  // For now, return null as tokens aren't stored in the User model
-  return null;
+  try {
+    return {
+      accessToken: decrypt(tokenRecord.accessToken),
+      refreshToken: tokenRecord.refreshToken ? decrypt(tokenRecord.refreshToken) : undefined,
+      expiresOn: tokenRecord.expiresAt,
+      microsoftId: tokenRecord.providerUserId || "",
+      tenantId: tokenRecord.providerTenantId || "",
+      scopes: tokenRecord.scopes,
+    };
+  } catch (error) {
+    console.error("Failed to decrypt tokens:", error);
+    return null;
+  }
 }
 
 /**
@@ -239,14 +276,18 @@ export async function getValidAccessToken(
  * Remove stored tokens for a user
  */
 export async function removeUserTokens(userId: string): Promise<void> {
+  // Remove token record
+  await prisma.userToken.deleteMany({
+    where: { userId, provider: "microsoft" },
+  });
+
+  // Clear external ID
   await prisma.user.update({
     where: { id: userId },
     data: {
       externalId: null,
     },
   });
-
-  // TODO: Remove from UserToken table when added
 }
 
 /**
