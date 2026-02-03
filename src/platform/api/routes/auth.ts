@@ -25,6 +25,7 @@ import {
   DEFAULT_USER_SCOPES,
 } from "../../auth/entra/index.js";
 import { prisma } from "../../db/client.js";
+import { handleGoogleAuth } from "./google-auth.js";
 import { sendError, sendJson, parseBody, redirect } from "./utils.js";
 
 /**
@@ -49,6 +50,12 @@ export async function handleAuth(
   // Check Entra configuration for Entra-specific routes
   if (subPath.startsWith("/entra") && !isEntraConfigured()) {
     sendError(res, "SERVICE_UNAVAILABLE", "Microsoft Entra SSO is not configured");
+    return;
+  }
+
+  // Forward Google auth routes to dedicated handler
+  if (subPath.startsWith("/google")) {
+    await handleGoogleAuth(req, res, ctx);
     return;
   }
 
