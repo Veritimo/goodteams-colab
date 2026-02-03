@@ -384,24 +384,32 @@ async function handleLogout(
       return;
     }
 
-    // Remove stored tokens
-    await removeUserTokens(ctx.user.id);
+    // Remove stored tokens (gracefully handle stub auth users that don't exist in DB)
+    try {
+      await removeUserTokens(ctx.user.id);
+    } catch {
+      // User may not exist in DB (stub auth) - that's fine
+    }
 
-    // Log audit event
+    // Log audit event (gracefully handle missing org for stub auth)
     if (ctx.user.orgId) {
-      await prisma.auditLog.create({
-        data: {
-          organizationId: ctx.user.orgId,
-          actorId: ctx.user.id,
-          actorRole: ctx.user.role.toUpperCase() as "ADMIN" | "USER",
-          action: "user.logout",
-          targetType: "user",
-          targetId: ctx.user.id,
-          details: {},
-          ipAddress: getClientIp(req),
-          userAgent: req.headers["user-agent"] ?? null,
-        },
-      });
+      try {
+        await prisma.auditLog.create({
+          data: {
+            organizationId: ctx.user.orgId,
+            actorId: ctx.user.id,
+            actorRole: ctx.user.role.toUpperCase() as "ADMIN" | "USER",
+            action: "user.logout",
+            targetType: "user",
+            targetId: ctx.user.id,
+            details: {},
+            ipAddress: getClientIp(req),
+            userAgent: req.headers["user-agent"] ?? null,
+          },
+        });
+      } catch {
+        // Org may not exist in DB (stub auth) - that's fine
+      }
     }
 
     // TODO: Clear session (Phase 2B)

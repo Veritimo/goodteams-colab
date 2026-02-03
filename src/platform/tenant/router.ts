@@ -8,7 +8,7 @@
  * 3. Subdomain (tenant.goodteams.ai)
  */
 
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { type GatewayStatus } from "@prisma/client";
 import { createProxyMiddleware, type Options } from "http-proxy-middleware";
 import { prisma } from "../db/client.js";
@@ -194,7 +194,7 @@ export async function resolveTenant(req: TenantRequest): Promise<TenantContext |
  *
  * @returns Express middleware function
  */
-export function tenantContextMiddleware() {
+export function tenantContextMiddleware(): RequestHandler {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const tenant = await resolveTenant(req as TenantRequest);

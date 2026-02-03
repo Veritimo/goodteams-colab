@@ -315,7 +315,7 @@ export class GoogleServiceAccount {
       const jwtClient = new JWT({
         email: this.credentials.client_email,
         key: this.credentials.private_key,
-        scopes: testScopes,
+        scopes: [...testScopes],
         subject: testEmail,
       });
 

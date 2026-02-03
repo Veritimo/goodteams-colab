@@ -231,11 +231,10 @@ export interface SendEmailOptions {
 
 /**
  * Options for replying to an email
+ * Note: body is passed as a separate parameter to replyToEmail()
  */
 export interface ReplyEmailOptions {
-  /** Plain text body */
-  body: string;
-  /** HTML body (optional) */
+  /** HTML body (optional, plain text body is the main parameter) */
   htmlBody?: string;
   /** Reply to all recipients */
   replyAll?: boolean;

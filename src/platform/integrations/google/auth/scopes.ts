@@ -240,7 +240,7 @@ export function getScopeDisplayName(scope: string): string {
  * Validate that all scopes are valid Google API scopes
  */
 export function validateScopes(scopes: string[]): { valid: boolean; invalid: string[] } {
-  const validScopeValues = new Set(Object.values(GOOGLE_SCOPES));
+  const validScopeValues = new Set<string>(Object.values(GOOGLE_SCOPES));
   const invalid = scopes.filter((scope) => !validScopeValues.has(scope));
 
   return {

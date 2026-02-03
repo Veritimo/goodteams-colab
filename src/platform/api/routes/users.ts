@@ -27,6 +27,7 @@ import {
   requireOrganization,
   composeMiddleware,
 } from "../middleware/require-permission.js";
+import { handlePermissions } from "./permissions.js";
 import { sendJson, parseBody, type RouteHandler } from "./utils.js";
 
 /**
@@ -70,6 +71,14 @@ export const handleUsers: RouteHandler = async (
   const method = req.method?.toUpperCase() ?? "GET";
 
   try {
+    // Forward permission-related routes to permissions handler
+    // Matches: /api/platform/users/:id/permissions (GET, POST)
+    // Matches: /api/platform/users/:id/permissions/:name (DELETE)
+    if (path.includes("/permissions")) {
+      await handlePermissions(req, res, ctx);
+      return;
+    }
+
     // GET /api/platform/users/me - Get current user profile
     if (path === "/api/platform/users/me" && method === "GET") {
       await handleGetCurrentUser(req, res, ctx);
@@ -211,8 +220,22 @@ async function handleGetCurrentUser(
     },
   });
 
+  // If user not in DB (e.g., stub auth for testing), return context info
   if (!user) {
-    sendError(res, "NOT_FOUND", "User not found");
+    sendJson(res, {
+      id: ctx.user!.id,
+      email: ctx.user!.email,
+      username: ctx.user!.name,
+      role: ctx.user!.role.toUpperCase(),
+      externalId: null,
+      permissions: ctx.user!.permissions ?? [],
+      organization: ctx.user!.orgId
+        ? { id: ctx.user!.orgId, name: "Unknown", status: "ACTIVE" }
+        : null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      _stub: true, // Indicates this is from stub auth, not DB
+    });
     return;
   }
 

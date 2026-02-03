@@ -10,10 +10,12 @@ import { createRequestContext, type RequestContext } from "./middleware/context.
 import { handleError, sendError } from "./middleware/errors.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleAuth } from "./routes/auth.js";
+import { handleConnectors } from "./routes/connectors.js";
 import { handleHealth } from "./routes/health.js";
 import { handleInvitations } from "./routes/invitations.js";
 import { handleOrg } from "./routes/org.js";
 import { handlePermissions } from "./routes/permissions.js";
+import { handleTenantGateway } from "./routes/tenant-gateway.js";
 import { handleUsers } from "./routes/users.js";
 import { handleWorkflows } from "./routes/workflows.js";
 
@@ -46,6 +48,8 @@ const routes: Route[] = [
   { pattern: "/workflows", handler: handleWorkflows },
   { pattern: "/executions", handler: handleWorkflows },
   { pattern: "/webhooks", handler: handleWorkflows },
+  { pattern: "/connectors", handler: handleConnectors },
+  { pattern: "/tenant", handler: handleTenantGateway },
 ];
 
 /**

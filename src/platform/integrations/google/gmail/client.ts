@@ -24,7 +24,6 @@ import type {
   GmailDraft,
   DraftList,
   HistoryList,
-  GmailApiError,
 } from "./types.js";
 import {
   parseGmailApiMessage,
@@ -32,6 +31,7 @@ import {
   buildReplyMessage,
   base64UrlEncode,
 } from "./parser.js";
+import { GmailApiError } from "./types.js";
 
 // =============================================================================
 // CONSTANTS
@@ -146,12 +146,11 @@ export class GmailClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: response.statusText }));
-      const gmailError: GmailApiError = {
+      throw new GmailApiError({
         code: response.status,
         message: error.error?.message || error.message || "Unknown error",
         errors: error.error?.errors,
-      };
-      throw gmailError;
+      });
     }
 
     // Handle 204 No Content
