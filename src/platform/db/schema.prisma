@@ -36,6 +36,12 @@ model Organization {
   config      TenantConfig?
   credentials TenantCredential[]
 
+  // Connector relations (Phase 6)
+  connections ResourceConnection[]
+
+  // Workflow relations (Phase 7)
+  workflows   Workflow[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -289,4 +295,172 @@ model TenantCredential {
 
   @@unique([organizationId, key])
   @@index([organizationId])
+}
+
+// =============================================================================
+// CONNECTOR ENUMS (Phase 6)
+// =============================================================================
+
+enum ConnectionType {
+  SQL_SERVER
+  POSTGRESQL
+  MYSQL
+  DATAVERSE
+  SALESFORCE
+}
+
+enum ConnectionStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISABLED
+}
+
+// =============================================================================
+// RESOURCE CONNECTION (Phase 6)
+// =============================================================================
+
+model ResourceConnection {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  type        ConnectionType
+  name        String
+  description String?
+
+  config      Json     // { url, database, schema, tdsPort, etc. }
+  credentials String?  // Encrypted JSON
+
+  status          ConnectionStatus @default(PENDING)
+  lastHealthCheck DateTime?
+  healthMessage   String?
+  isReadOnly      Boolean          @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  schemaHints SchemaHint[]
+  schemaCache SchemaCache?
+
+  @@unique([organizationId, name])
+  @@index([organizationId, type])
+}
+
+// =============================================================================
+// SCHEMA HINT (Phase 6)
+// =============================================================================
+
+model SchemaHint {
+  id           String             @id @default(uuid())
+  connectionId String
+  connection   ResourceConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  tableName   String
+  columnName  String?
+  description String
+  pattern     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  @@unique([connectionId, tableName, description])
+  @@index([connectionId])
+}
+
+// =============================================================================
+// SCHEMA CACHE (Phase 6)
+// =============================================================================
+
+model SchemaCache {
+  id           String             @id @default(uuid())
+  connectionId String             @unique
+  connection   ResourceConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  tables        Json
+  relationships Json?
+
+  cachedAt  DateTime @default(now())
+  expiresAt DateTime
+}
+
+// =============================================================================
+// WORKFLOW ENUMS (Phase 7)
+// =============================================================================
+
+enum WorkflowStatus {
+  DRAFT     // Not yet activated
+  ACTIVE    // Running and accepting triggers
+  PAUSED    // Temporarily disabled
+  ARCHIVED  // Soft-deleted
+}
+
+enum ExecutionStatus {
+  PENDING           // Queued for execution
+  RUNNING           // Currently executing
+  COMPLETED         // Finished successfully
+  FAILED            // Finished with error
+  WAITING_FOR_INPUT // Paused waiting for user input
+}
+
+enum TriggerType {
+  MANUAL   // Triggered via API or UI
+  CRON     // Scheduled execution
+  WEBHOOK  // HTTP webhook trigger
+  CHAT     // Triggered from conversation
+  EMAIL    // Triggered by incoming email
+}
+
+// =============================================================================
+// WORKFLOW (Phase 7)
+// =============================================================================
+
+model Workflow {
+  id             String         @id @default(uuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name           String
+  description    String?
+  definition     Json           // { nodes: [], edges: [], globalConfig: {} }
+  status         WorkflowStatus @default(DRAFT)
+
+  triggerType    TriggerType?
+  triggerConfig  Json?          // cron expression, webhook secret, etc.
+
+  createdBy      String         // User ID who created the workflow
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  executions     WorkflowExecution[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([status])
+  @@index([triggerType])
+}
+
+// =============================================================================
+// WORKFLOW EXECUTION (Phase 7)
+// =============================================================================
+
+model WorkflowExecution {
+  id          String          @id @default(uuid())
+  workflowId  String
+  workflow    Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  status      ExecutionStatus @default(PENDING)
+  context     Json            // { inputs: {}, nodeOutputs: {}, globalVariables: {} }
+  logs        Json            @default("[]") // [{ timestamp, nodeId, message, level }]
+
+  triggeredBy String?         // userId or "cron" or "webhook"
+  startedAt   DateTime        @default(now())
+  finishedAt  DateTime?
+  error       String?
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([startedAt])
 }

@@ -1,0 +1,36 @@
+{
+  "name": "@goodteams/desktop-agent",
+  "version": "0.0.1",
+  "description": "GoodTeams Desktop Agent - Windows automation with Office COM integration",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./office": {
+      "types": "./dist/automation/office/index.d.ts",
+      "import": "./dist/automation/office/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:office": "vitest run __tests__/automation/office",
+    "lint": "eslint src __tests__",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.30",
+    "electron": "^40.1.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

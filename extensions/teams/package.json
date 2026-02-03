@@ -1,0 +1,31 @@
+{
+  "name": "@openclaw/teams",
+  "version": "2026.1.30",
+  "description": "OpenClaw Microsoft Teams channel plugin (Graph API)",
+  "type": "module",
+  "dependencies": {
+    "openclaw": "workspace:*"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "teams",
+      "label": "Microsoft Teams (Graph API)",
+      "selectionLabel": "Microsoft Teams (Graph API)",
+      "docsPath": "/channels/teams",
+      "docsLabel": "teams",
+      "blurb": "Graph API integration for Teams.",
+      "order": 61
+    },
+    "install": {
+      "npmSpec": "@openclaw/teams",
+      "localPath": "extensions/teams",
+      "defaultChoice": "npm"
+    }
+  }
+}

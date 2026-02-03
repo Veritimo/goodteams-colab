@@ -8,13 +8,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createRequestContext, type RequestContext } from "./middleware/context.js";
 import { handleError, sendError } from "./middleware/errors.js";
-import { handleHealth } from "./routes/health.js";
-import { handleOrg } from "./routes/org.js";
-import { handleUsers } from "./routes/users.js";
-import { handleInvitations } from "./routes/invitations.js";
-import { handlePermissions } from "./routes/permissions.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleAuth } from "./routes/auth.js";
+import { handleHealth } from "./routes/health.js";
+import { handleInvitations } from "./routes/invitations.js";
+import { handleOrg } from "./routes/org.js";
+import { handlePermissions } from "./routes/permissions.js";
+import { handleUsers } from "./routes/users.js";
+import { handleWorkflows } from "./routes/workflows.js";
 
 /**
  * Platform API base path
@@ -42,15 +43,16 @@ const routes: Route[] = [
   { pattern: "/permissions", handler: handlePermissions },
   { pattern: "/audit", handler: handleAudit },
   { pattern: "/auth", handler: handleAuth },
+  { pattern: "/workflows", handler: handleWorkflows },
+  { pattern: "/executions", handler: handleWorkflows },
+  { pattern: "/webhooks", handler: handleWorkflows },
 ];
 
 /**
  * Match request path against route patterns
  * Returns the matched route and any path parameters
  */
-function matchRoute(
-  path: string,
-): { route: Route; params: Record<string, string> } | null {
+function matchRoute(path: string): { route: Route; params: Record<string, string> } | null {
   // Remove base path prefix
   if (!path.startsWith(PLATFORM_API_BASE_PATH)) {
     return null;
@@ -80,7 +82,10 @@ function matchRoute(
 function addCorsHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*"); // TODO: Configure allowed origins
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, X-Tenant-Id");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Request-Id, X-Tenant-Id",
+  );
   res.setHeader("Access-Control-Max-Age", "86400");
 }
 
@@ -99,9 +104,11 @@ function handlePreflight(res: ServerResponse): void {
  * This follows the gateway's handler pattern where the function returns
  * true if it handled the request, false otherwise.
  */
-export function createPlatformApiHandler(opts: {
-  trustedProxies?: string[];
-} = {}): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
+export function createPlatformApiHandler(
+  opts: {
+    trustedProxies?: string[];
+  } = {},
+): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   return async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
 

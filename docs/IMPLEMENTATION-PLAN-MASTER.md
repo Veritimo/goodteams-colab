@@ -65,21 +65,22 @@ Every spec in `/docs` is mapped to an implementation phase:
 | **SECURITY-ARCHITECTURE.md** | 2 | P0 - Core |
 | **RBAC-STAFF-ONBOARDING.md** | 2 | P0 - Core |
 | **MICROSOFT-365-AUTH-ARCHITECTURE.md** | 2, 4 | P0 - Core |
-| **GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md** | 9 | P1 - Important |
+| **GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md** | 8 | P1 - Important |
 | **DESKTOP-AGENT-ARCHITECTURE.md** | 5 | P0 - Core |
-| **GOODTEAMS-AI-GAP-ANALYSIS.md** | 7, 8 | P0 - Core |
+| **GOODTEAMS-AI-GAP-ANALYSIS.md** | 7, Backlog | P0 - Core |
+| **IMPLEMENTATION-PLAN-PHASE7.md** | 7 | P0 - Core |
 | **AUDIT-LOGGING-SPEC.md** | 2 | P0 - Core |
 | **ENTERPRISE-READINESS-GAPS.md** | All | Reference |
-| **COMPLIANCE-MATRIX.md** | 10 | P2 - Later |
-| **DATA-GOVERNANCE.md** | 10 | P2 - Later |
-| **DISASTER-RECOVERY.md** | 10 | P2 - Later |
-| **OPERATIONS-RUNBOOKS.md** | 10 | P2 - Later |
+| **COMPLIANCE-MATRIX.md** | 9 | P2 - Later |
+| **DATA-GOVERNANCE.md** | 9 | P2 - Later |
+| **DISASTER-RECOVERY.md** | 9 | P2 - Later |
+| **OPERATIONS-RUNBOOKS.md** | 9 | P2 - Later |
 
 ---
 
 ## 3. Phase Overview
 
-### Core Functionality (Phases 1-9)
+### Core Functionality (Phases 1-8)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -99,37 +100,43 @@ Every spec in `/docs` is mapped to an implementation phase:
 │                                                                              │
 │  Phase 5         Phase 6           Phase 7           Phase 8                │
 │  ════════        ════════          ════════          ════════               │
-│  Desktop Agent   Database & CRM    Colab             Visual Workflow        │
-│  (8 weeks)       (6 weeks)         (8 weeks)         (6 weeks)              │
+│  Desktop Agent   Database & CRM    Visual Workflow   Google Workspace       │
+│  (8 weeks)       (6 weeks)         (6 weeks)         (4 weeks)              │
 │                                                                              │
-│  • Electron app  • SQL Server      • Artifact UI     • React Flow           │
-│  • Win UI Auto   • PostgreSQL      • PREE engine     • Node types           │
-│  • Office COM    • Query builder   • Block system    • Execution engine     │
-│  • Visual collab • SchemaHints     • SSE streaming   • Triggers             │
-│  • Screen stream • Salesforce      • Accept/reject   • History/debug        │
-│                                                                              │
-│  Phase 9                                                                     │
-│  ════════                                                                    │
-│  Google Workspace                                                            │
-│  (4 weeks)                                                                   │
-│                                                                              │
-│  • OAuth + DWD                                                               │
-│  • Drive/Docs                                                                │
-│  • Gmail                                                                     │
-│  • Calendar                                                                  │
+│  • Electron app  • SQL Server      • React Flow      • OAuth + DWD          │
+│  • Win UI Auto   • PostgreSQL      • Node types      • Drive/Docs           │
+│  • Office COM    • Dynamics CRM    • Execution eng   • Gmail                │
+│  • Visual collab • Salesforce      • Triggers        • Calendar             │
+│  • Screen stream • SchemaHints     • Agent tools     • Chat integration     │
+│                                    • History/debug                          │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
-                                      │ ~52 weeks
+                                      │ ~44 weeks (core)
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                        COMPLIANCE & OPS (Phase 10)                           │
+│                        COMPLIANCE & OPS (Phase 9)                            │
 │                              (12 weeks)                                      │
 │                                                                              │
 │  • SOC 2 controls mapping          • Data governance tooling                │
 │  • GDPR data subject rights        • Disaster recovery                      │
 │  • Compliance matrix               • Operations runbooks                    │
 │  • Penetration testing             • Monitoring/alerting                    │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      │ +12 weeks
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        BACKLOG / FUTURE PHASES                               │
+│                                                                              │
+│  Colab (Deferred)                                                            │
+│  ════════════════                                                            │
+│  • Artifact UI             • Block system                                   │
+│  • PREE engine             • Accept/reject workflow                         │
+│  • SSE streaming           • Export (DOCX/PDF)                              │
+│                                                                              │
+│  When: After core phases, based on customer demand                          │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -144,9 +151,10 @@ Every spec in `/docs` is mapped to an implementation phase:
 | 4 | Microsoft 365 | 6 | 20 |
 | 5 | Desktop Agent | 8 | 28 |
 | 6 | Database & CRM | 6 | 34 |
-| 7 | Colab | 8 | 42 |
-| 8 | Visual Workflow | 6 | 48 |
-| 9 | Google Workspace | 4 | 52 |
+| 7 | Visual Workflow | 6 | 40 |
+| 8 | Google Workspace | 4 | 44 |
+| 9 | Compliance & Ops | 12 | 56 |
+| — | Colab (Backlog) | 8 | — |
 | 10 | Compliance & Ops | 12 | 64 |
 
 **Core functionality complete:** Week 52 (~12 months)  
@@ -616,195 +624,177 @@ jobs:
 
 ### Phase 6: Database & CRM (Weeks 29-34)
 
-**Goal:** SQL Server, PostgreSQL, Salesforce integration
+**Goal:** SQL Server, PostgreSQL, Dynamics CRM/Dataverse, Salesforce integration
 
 **Spec References:**
 - GOODTEAMS-STRATEGY.md §5.4-5.5
+- IMPLEMENTATION-PLAN-PHASE6.md (detailed spec)
 
-#### 6.1 SQL Connector Foundation (Week 29-30)
+#### 6.1 Connector Framework (Week 29)
 
 | Task | Description | Test |
 |------|-------------|------|
-| Connection management | Pool per connection | Connects |
-| SQL Server driver | mssql package | Queries work |
+| ResourceConnection model | Unified connector storage | CRUD works |
+| Credential encryption | AES-256-GCM for secrets | Encrypts/decrypts |
+| Connection pooling | Per-connector pools | Pools reused |
+| Health checks | Periodic connectivity test | Status updated |
+
+#### 6.2 SQL Integration (Week 29-30)
+
+| Task | Description | Test |
+|------|-------------|------|
+| SQL Server driver | mssql + tedious packages | Queries work |
 | PostgreSQL driver | pg package | Queries work |
-| Query builder | AI builds queries | SQL generated |
-| Schema introspection | Read table/column metadata | Schema returned |
+| Schema introspection | Tables, columns, relationships | Schema returned |
+| Query generation | Natural language → SQL via LLM | SQL generated |
 
-#### 6.2 SchemaHints System (Week 31)
-
-| Task | Description | Test |
-|------|-------------|------|
-| SchemaHints model | DB model for hints | CRUD works |
-| Hint application | Query builder uses hints | Hints applied |
-| Hint UI | Admin can manage hints | UI works |
-| Business rules → SQL | Natural language → patterns | Translates |
-
-#### 6.3 Query Safety (Week 32)
+#### 6.3 SchemaHints System (Week 30-31)
 
 | Task | Description | Test |
 |------|-------------|------|
-| Read-only mode | Prevent mutations | Mutations blocked |
-| Row limits | Max rows per query | Limits enforced |
-| Sensitive masking | Redact PII columns | Data masked |
-| Query audit | Log all queries | Queries logged |
-| Timeout enforcement | Kill long queries | Times out |
+| SchemaHint model | Per-connector business rules | CRUD works |
+| Hints engine | Apply hints to query generation | Hints applied |
+| Query safety | Read-only mode, row limits, timeouts | Safety enforced |
+| Query audit | Log all queries with user context | Queries logged |
 
-#### 6.4 Salesforce Integration (Week 33-34)
+#### 6.4 Dynamics CRM/Dataverse (Week 31-32)
 
 | Task | Description | Test |
 |------|-------------|------|
-| OAuth flow | Salesforce OAuth | Authenticates |
-| SOQL queries | Query Salesforce data | Results returned |
-| Record CRUD | Create/update/delete | Records modified |
+| Azure auth | ClientSecretCredential integration | Authenticates |
+| TDS client | SQL via Dataverse TDS endpoint (port 5558) | Queries work |
+| Entity metadata | Schema cache + refresh | Metadata cached |
+| CRM SchemaHints | Entity-specific query rules | Hints applied |
+| Bulk operations | Batch create/update/delete (500/batch) | Bulk works |
+| Permission gating | CRM_CREATE/UPDATE/DELETE required | Writes gated |
+
+#### 6.5 Salesforce Integration (Week 33-34)
+
+| Task | Description | Test |
+|------|-------------|------|
+| OAuth flow | Salesforce OAuth 2.0 | Authenticates |
+| SOQL execution | Query with pagination | Results returned |
+| Metadata API | Object/field introspection | Schema returned |
+| Salesforce hints | Object-specific rules | Hints applied |
+| Bulk API | Large data operations | Bulk works |
 | Report access | Read Salesforce reports | Reports returned |
 
 #### Phase 6 Checkpoint
 
 | Criterion | Requirement |
 |-----------|-------------|
-| SQL queries | Execute against SQL Server + PostgreSQL |
-| SchemaHints | Business rules applied to queries |
-| Safety | PII masked, mutations blocked when read-only |
-| Salesforce | CRUD operations work |
-| E2E | `sql_query`, `salesforce_crud` pass |
+| Connectors | Unified CRUD, credentials encrypted |
+| SQL | Query SQL Server + PostgreSQL |
+| Dataverse | Query via TDS, bulk ops with batching |
+| Salesforce | SOQL + Bulk API work |
+| SchemaHints | Business rules improve query accuracy |
+| Safety | Writes gated by RBAC, read-only default |
+| E2E | `sql_query`, `crm_query`, `salesforce_crud` pass |
 
 ---
 
-### Phase 7: Colab (Weeks 35-42)
+### Phase 7: Visual Workflow (Weeks 35-40) ✅ COMPLETE
 
-**Goal:** Artifact-centric collaboration from goodteams-ai
+**Goal:** No-code workflow automation with agent-assisted creation
 
 **Spec References:**
-- GOODTEAMS-AI-GAP-ANALYSIS.md §1 (Colab)
+- GOODTEAMS-AI-GAP-ANALYSIS.md §2 (Visual Workflow Designer)
+- IMPLEMENTATION-PLAN-PHASE7.md (detailed spec)
 
-#### 7.1 Data Model (Week 35)
+**Key Decisions:**
+- SQL/CRM as **tools**, not separate node types
+- Main agent creates workflows via `workflow_create` tool (no separate workflow agent)
+- BullMQ for reliable job queue execution
 
-| Task | Description | Test |
-|------|-------------|------|
-| Artifact model | Format, status, blocks | CRUD works |
-| Block model | Type, content, state | CRUD works |
-| Block state machine | draft → pending → accepted | Transitions work |
-| Workstream model | Container for artifacts | CRUD works |
+**Status:** ✅ Complete (474 tests passing)
 
-#### 7.2 PREE Engine (Week 36-37)
-
-| Task | Description | Test |
-|------|-------------|------|
-| Plan phase | Goal decomposition | Plan generated |
-| Research phase | Context gathering | Sources found |
-| Execute phase | Content generation | Blocks created |
-| Evaluate phase | Self-critique | Evaluation logged |
-| Phase transitions | State machine | Correct flow |
-
-#### 7.3 Colab Tools (Week 38)
+#### 7.1 Foundation & Data Model (Week 35)
 
 | Task | Description | Test |
 |------|-------------|------|
-| clarify_goal | Ask focused questions | Questions returned |
-| propose_plan | Create work plan | Plan structured |
-| draft_content | Generate blocks | Blocks created |
-| update_block | Revise specific block | Block updated |
-| evaluate_quality | Self-critique | Evaluation returned |
+| Workflow model | Name, tenant, status, definition | CRUD works |
+| WorkflowExecution model | Run history, logs, context | CRUD works |
+| Schema migration | Prisma migration | Migration runs |
+| CRUD service | Create, read, update, delete | All ops work |
+| API routes | `/api/workflows/*` endpoints | Routes respond |
+| Definition validation | Validate node/edge structure | Invalid rejected |
 
-#### 7.4 Event Streaming (Week 39)
-
-| Task | Description | Test |
-|------|-------------|------|
-| SSE endpoint | Server-sent events | Connection works |
-| Phase events | phase_started, completed | Events sent |
-| Block events | output_snapshot, output_patch | Events sent |
-| Gate events | action_gate for approvals | Events sent |
-| Client library | TypeScript SSE client | Receives events |
-
-#### 7.5 Colab UI (Week 40-42)
+#### 7.2 Execution Engine Core (Week 36)
 
 | Task | Description | Test |
 |------|-------------|------|
-| Artifact viewer | Display blocks | Renders |
-| Block actions | Accept/reject/revise | Actions work |
-| Live updates | SSE → UI updates | Real-time |
-| Block editor | Manual edits | Saves |
-| Export | Download as DOCX/PDF | Exports work |
+| BullMQ setup | Redis queue for workflow jobs | Queue works |
+| Engine class | Variable resolution `{{node.output}}` | Variables resolve |
+| Graph traversal | Find next nodes from edges | Traversal works |
+| Job processor | Dequeue and execute nodes | Jobs process |
+| Context management | Track inputs/outputs per node | Context persists |
+
+#### 7.3 Node Executors (Week 37)
+
+| Task | Description | Test |
+|------|-------------|------|
+| Trigger executor | Pass-through for execution start | Triggers fire |
+| Agent executor | LLM call with tools | Agent responds |
+| Tool executor | Call registered tools (SQL, CRM, etc.) | Tools execute |
+| Condition executor | Branch on JavaScript expression | Branches correctly |
+| Communication executor | Email, Teams, chat | Messages sent |
+| Iterator executor | Loop over collections | Loops work |
+
+#### 7.4 Agent Workflow Tools (Week 38)
+
+| Task | Description | Test |
+|------|-------------|------|
+| workflow_list | List workflows for tenant | Returns list |
+| workflow_get | Get workflow details | Returns definition |
+| workflow_create | Create from prompt or definition | Creates workflow |
+| workflow_update | Modify existing workflow | Updates saved |
+| workflow_execute | Trigger workflow run | Execution starts |
+| workflow_status | Check execution status | Status returned |
+| Prompt-to-workflow | LLM generates definition from NL | Generates valid def |
+
+#### 7.5 Triggers (Week 39)
+
+| Task | Description | Test |
+|------|-------------|------|
+| Manual trigger | API call to start | Starts execution |
+| Cron trigger | node-cron scheduling | Fires on schedule |
+| Webhook trigger | Unique HTTP endpoint per workflow | Receives payload |
+| Chat trigger | Start from conversation | Workflow starts |
+
+#### 7.6 React Flow Designer (Week 40)
+
+| Task | Description | Test |
+|------|-------------|------|
+| Canvas | React Flow setup | Renders |
+| Node components | Custom node UIs per type | All types render |
+| Node palette | Draggable node types | Drag works |
+| Edge connections | Connect nodes with handles | Edges work |
+| Properties panel | Edit node configuration | Edits save |
+| Save/load | Persist workflow to API | Workflow saved |
+| Run button | Execute from designer | Starts execution |
+| Execution view | Show run status/logs | Status shown |
 
 #### Phase 7 Checkpoint
 
 | Criterion | Requirement |
 |-----------|-------------|
-| Artifacts | Create, draft, accept flow works |
-| PREE | All phases execute correctly |
-| SSE | Real-time updates in UI |
-| Export | Artifacts exportable |
-| E2E | `colab_create`, `colab_accept`, `colab_export` pass |
-
----
-
-### Phase 8: Visual Workflow (Weeks 43-48)
-
-**Goal:** No-code workflow automation builder
-
-**Spec References:**
-- GOODTEAMS-AI-GAP-ANALYSIS.md §2 (Visual Workflow Designer)
-
-#### 8.1 Workflow Data Model (Week 43)
-
-| Task | Description | Test |
-|------|-------------|------|
-| Workflow model | Name, tenant, status | CRUD works |
-| Node model | Type, position, config | CRUD works |
-| Edge model | Source, target, condition | CRUD works |
-| Execution model | Run history, logs | CRUD works |
-
-#### 8.2 React Flow Designer (Week 44-45)
-
-| Task | Description | Test |
-|------|-------------|------|
-| Canvas | React Flow setup | Renders |
-| Node palette | Draggable node types | Drag works |
-| Node types | Trigger, Agent, Condition, Comm | All render |
-| Edge connections | Connect nodes | Edges work |
-| Save/load | Persist workflow | Saves/loads |
-
-#### 8.3 Execution Engine (Week 46-47)
-
-| Task | Description | Test |
-|------|-------------|------|
-| Job queue | BullMQ or similar | Jobs queued |
-| Node executors | Execute each node type | All execute |
-| Condition evaluation | Branch on conditions | Branches correctly |
-| Error handling | Retry, fail gracefully | Errors handled |
-| Execution logging | Log each step | Logs created |
-
-#### 8.4 Triggers & History (Week 48)
-
-| Task | Description | Test |
-|------|-------------|------|
-| Manual trigger | Run now button | Executes |
-| Cron trigger | Scheduled runs | Fires on time |
-| Webhook trigger | External trigger | Receives hook |
-| Execution history | View past runs | History shown |
-| Debug view | Step-through execution | Debug works |
-
-#### Phase 8 Checkpoint
-
-| Criterion | Requirement |
-|-----------|-------------|
-| Designer | Create workflow visually |
-| Execution | Workflow runs end-to-end |
-| Triggers | Cron and webhook work |
-| History | Can view past executions |
+| Designer | Create workflow visually with React Flow |
+| Execution | Workflow runs end-to-end via BullMQ |
+| Triggers | Cron, webhook, and chat triggers work |
+| Agent tools | Main agent can create/run workflows |
+| History | Can view past executions with logs |
+| Tests | 150+ unit tests, 30+ integration tests pass |
 | E2E | `workflow_create`, `workflow_run`, `workflow_trigger` pass |
-
 ---
 
-### Phase 9: Google Workspace (Weeks 49-52)
+### Phase 8: Google Workspace (Weeks 41-44)
 
 **Goal:** Google OAuth, Drive, Gmail, Calendar
 
 **Spec References:**
 - GOOGLE-WORKSPACE-AUTH-ARCHITECTURE.md
 
-#### 9.1 Google OAuth (Week 49)
+#### 8.1 Google OAuth (Week 41)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -813,7 +803,7 @@ jobs:
 | Domain-wide delegation | Service account setup | Impersonation works |
 | Token storage | Encrypted storage | Persists |
 
-#### 9.2 Google Drive (Week 50)
+#### 8.2 Google Drive (Week 42)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -822,7 +812,7 @@ jobs:
 | File write | Upload files | File created |
 | Shared drives | Access shared drives | Works |
 
-#### 9.3 Gmail & Calendar (Week 51-52)
+#### 8.3 Gmail & Calendar (Week 43-44)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -831,7 +821,7 @@ jobs:
 | Calendar read | List events | Returns events |
 | Calendar write | Create events | Event created |
 
-#### Phase 9 Checkpoint
+#### Phase 8 Checkpoint
 
 | Criterion | Requirement |
 |-----------|-------------|
@@ -843,7 +833,7 @@ jobs:
 
 ---
 
-### Phase 10: Compliance & Ops (Weeks 53-64)
+### Phase 9: Compliance & Ops (Weeks 45-56)
 
 **Goal:** Enterprise compliance and operational readiness
 
@@ -853,7 +843,7 @@ jobs:
 - DISASTER-RECOVERY.md
 - OPERATIONS-RUNBOOKS.md
 
-#### 10.1 SOC 2 Controls (Week 53-56)
+#### 9.1 SOC 2 Controls (Week 45-48)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -862,7 +852,7 @@ jobs:
 | Evidence collection | Automated evidence | Generates |
 | Audit preparation | Documentation | Ready for audit |
 
-#### 10.2 Data Governance (Week 57-59)
+#### 9.2 Data Governance (Week 49-51)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -871,7 +861,7 @@ jobs:
 | Right to erasure | GDPR Article 17 | Erases |
 | Data portability | GDPR Article 20 | Exports |
 
-#### 10.3 Disaster Recovery (Week 60-61)
+#### 9.3 Disaster Recovery (Week 52-53)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -880,7 +870,7 @@ jobs:
 | Failover | Multi-region failover | Fails over |
 | RTO/RPO validation | Meet targets | Targets met |
 
-#### 10.4 Operations (Week 62-64)
+#### 9.4 Operations (Week 54-56)
 
 | Task | Description | Test |
 |------|-------------|------|
@@ -889,7 +879,7 @@ jobs:
 | On-call | PagerDuty/Opsgenie | Alerts route |
 | Incident response | IR playbook | Documented |
 
-#### Phase 10 Checkpoint
+#### Phase 9 Checkpoint
 
 | Criterion | Requirement |
 |-----------|-------------|
@@ -897,6 +887,24 @@ jobs:
 | GDPR | Erasure and portability work |
 | DR | Backup/restore tested |
 | Ops | Runbooks complete, monitoring live |
+
+---
+
+### Backlog: Colab (Future)
+
+**Goal:** Artifact-centric collaboration (deferred based on customer demand)
+
+**Spec References:**
+- GOODTEAMS-AI-GAP-ANALYSIS.md §1 (Colab)
+
+**Features (when implemented):**
+- Artifact model with blocks
+- PREE engine (Plan-Revise-Evaluate-Execute)
+- SSE streaming for real-time updates
+- Accept/reject workflow for blocks
+- Export to DOCX/PDF
+
+**When to consider:** After Phase 9, based on customer feedback and demand for collaborative document editing features.
 
 ---
 
@@ -910,8 +918,8 @@ All phases share a PostgreSQL database with Prisma ORM.
 Phase 1: Core models (Org, User, Invite, Audit)
 Phase 3: Tenant model
 Phase 4-6: Integration credential storage
-Phase 7: Artifact, Block, Workstream
-Phase 8: Workflow, Node, Edge, Execution
+Phase 7: Workflow, WorkflowExecution
+Phase 8: Google integration credentials
 ```
 
 **Migration strategy:** Each phase adds migrations, never breaks previous.
@@ -920,7 +928,7 @@ Phase 8: Workflow, Node, Edge, Execution
 
 ```
 Phase 2: Entra SSO (primary)
-Phase 9: Google SSO (secondary)
+Phase 8: Google SSO (secondary)
 All: JWT tokens with refresh
 ```
 
@@ -1122,6 +1130,79 @@ Structured JSON logging:
 **Next:**
 - Run Phase 2 checkpoint tests
 - Start Phase 3: Multi-Tenancy
+
+---
+
+### 2026-02-02 — Phase 7: Visual Workflow COMPLETE ✅
+
+**Status:** ✅ Complete
+
+**Work:**
+- 6-week implementation completed across backend and frontend:
+
+**Week 35 - Foundation & Data Model:**
+- Prisma schema with Workflow + WorkflowExecution models
+- CRUD service with comprehensive error handling
+- Definition validation with node/edge structure checks
+- API routes: `/api/platform/workflows/*`
+
+**Week 36 - Execution Engine Core:**
+- BullMQ queue setup for reliable job processing
+- Engine class with variable resolution `{{node.output}}`
+- Graph traversal for finding next nodes
+- Execution context management
+
+**Week 37 - Node Executors:**
+- Trigger executor (workflow start)
+- Agent executor (LLM calls with tools)
+- Tool executor (direct tool invocation)
+- Condition executor (JavaScript expressions)
+- Communication executor (email, Teams, chat)
+- Iterator executor (loop over collections)
+
+**Week 38 - Agent Workflow Tools:**
+- workflow_list, workflow_get, workflow_create
+- workflow_update, workflow_execute, workflow_status
+- Prompt-to-workflow generation via LLM
+
+**Week 39 - Triggers:**
+- Manual trigger (API call)
+- Cron trigger (node-cron scheduling)
+- Webhook trigger (unique HTTP endpoints)
+- Chat trigger (conversation-based activation)
+
+**Week 40 - React Flow Designer UI:**
+- WorkflowDesigner canvas with React Flow
+- Custom node components (6 node types)
+- PropertiesPanel for node configuration
+- ExecutionView for run status/logs
+- useWorkflowDesigner hook
+
+**Phase 7 Totals:**
+- 48 source files created
+- 474 tests passing
+- Complete workflow automation system
+
+**Tests by Component:**
+| Component | Tests |
+|-----------|-------|
+| Service | 41 |
+| Validation | 38 |
+| Engine | 70 |
+| Nodes | 133 |
+| Triggers | 79 |
+| Tools | 47 |
+| UI Components | 16 |
+| API Routes | 50 |
+| **Total** | **474** |
+
+**Dependencies Added:**
+- `bullmq@^5.67.2` - Redis-backed job queue
+- `reactflow@^11.11.4` - Visual workflow designer
+- `ioredis@^5.9.2` - Redis client for BullMQ
+
+**Next:**
+- Start Phase 8: Google Workspace
 
 ---
 

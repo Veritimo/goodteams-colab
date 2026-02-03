@@ -15,6 +15,43 @@ export {
   type GeneratedConfig,
 } from "./config-generator.js";
 
+// Config templates
+export {
+  getDefaultConfig,
+  getPlanFeatures,
+  getPlanLimits,
+  isFeatureEnabled,
+  mergeFeatures,
+  mergeLimits,
+  isValidPlan,
+  PLAN_MODELS,
+  PLAN_FEATURES,
+  PLAN_LIMITS,
+  DEFAULT_AGENT_SETTINGS,
+  type Plan,
+  type PlanFeatures,
+  type PlanLimits,
+  type DefaultTenantConfig,
+} from "./config-templates.js";
+
+// Gateway provisioner
+export {
+  GatewayProvisioner,
+  createGatewayProvisioner,
+  provisionTenant,
+  deprovisionTenant,
+  getProvisioningStatus,
+  restartTenant,
+  ProvisioningError,
+  TENANTS_BASE_PATH,
+  HEALTH_CHECK_CONFIG,
+  type ProvisioningResult,
+  type DeprovisioningResult,
+  type ProvisioningStatus,
+  type ProvisionOptions,
+  type DeprovisionOptions,
+} from "./gateway-provisioner.js";
+
 // Credential vault
 export {
   setCredential,

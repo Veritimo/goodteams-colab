@@ -81,6 +81,14 @@ export const AUDIT_ACTIONS = {
   SECURITY_ANOMALY_DETECTED: "security.anomaly.detected",
   SECURITY_RATE_LIMITED: "security.rate.limited",
   SECURITY_GUARDRAIL_TRIGGERED: "security.guardrail.triggered",
+
+  // =========================================================================
+  // Tenant Gateway
+  // =========================================================================
+  TENANT_GATEWAY_RESTARTED: "tenant.gateway.restarted",
+  TENANT_CONFIG_UPDATED: "tenant.config.updated",
+  TENANT_PROVISIONED: "tenant.provisioned",
+  TENANT_DEPROVISIONED: "tenant.deprovisioned",
 } as const;
 
 /**
@@ -101,6 +109,8 @@ export const TARGET_TYPES = {
   PERMISSION: "permission",
   SETTINGS: "settings",
   SESSION: "session",
+  TENANT_GATEWAY: "tenant_gateway",
+  TENANT_CONFIG: "tenant_config",
 } as const;
 
 /**
@@ -180,4 +190,10 @@ export const ACTION_RISK_LEVELS: Record<AuditAction, RiskLevel> = {
   [AUDIT_ACTIONS.SECURITY_ANOMALY_DETECTED]: "high",
   [AUDIT_ACTIONS.SECURITY_RATE_LIMITED]: "medium",
   [AUDIT_ACTIONS.SECURITY_GUARDRAIL_TRIGGERED]: "critical",
+
+  // Tenant Gateway - high risk
+  [AUDIT_ACTIONS.TENANT_GATEWAY_RESTARTED]: "high",
+  [AUDIT_ACTIONS.TENANT_CONFIG_UPDATED]: "high",
+  [AUDIT_ACTIONS.TENANT_PROVISIONED]: "high",
+  [AUDIT_ACTIONS.TENANT_DEPROVISIONED]: "critical",
 };

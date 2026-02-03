@@ -112,6 +112,7 @@ Run `openclaw doctor` to surface risky/misconfigured DM policies.
 - **[Local-first Gateway](https://docs.openclaw.ai/gateway)** — single control plane for sessions, channels, tools, and events.
 - **[Multi-channel inbox](https://docs.openclaw.ai/channels)** — WhatsApp, Telegram, Slack, Discord, Google Chat, Signal, iMessage, BlueBubbles, Microsoft Teams, Matrix, Zalo, Zalo Personal, WebChat, macOS, iOS/Android.
 - **[Multi-agent routing](https://docs.openclaw.ai/gateway/configuration)** — route inbound channels/accounts/peers to isolated agents (workspaces + per-agent sessions).
+- **[Visual Workflows](docs/WORKFLOW-API.md)** — no-code automation builder with React Flow designer, cron/webhook triggers, and agent-assisted workflow creation.
 - **[Voice Wake](https://docs.openclaw.ai/nodes/voicewake) + [Talk Mode](https://docs.openclaw.ai/nodes/talk)** — always-on speech for macOS/iOS/Android with ElevenLabs.
 - **[Live Canvas](https://docs.openclaw.ai/platforms/mac/canvas)** — agent-driven visual workspace with [A2UI](https://docs.openclaw.ai/platforms/mac/canvas#canvas-a2ui).
 - **[First-class tools](https://docs.openclaw.ai/tools)** — browser, canvas, nodes, cron, sessions, and Discord/Slack actions.
@@ -151,6 +152,15 @@ Run `openclaw doctor` to surface risky/misconfigured DM policies.
 - [Nodes](https://docs.openclaw.ai/nodes): camera snap/clip, screen record, [location.get](https://docs.openclaw.ai/nodes/location-command), notifications.
 - [Cron + wakeups](https://docs.openclaw.ai/automation/cron-jobs); [webhooks](https://docs.openclaw.ai/automation/webhook); [Gmail Pub/Sub](https://docs.openclaw.ai/automation/gmail-pubsub).
 - [Skills platform](https://docs.openclaw.ai/tools/skills): bundled, managed, and workspace skills with install gating + UI.
+
+### Visual Workflows
+
+- **[Visual Workflow Designer](docs/WORKFLOW-API.md)**: No-code automation builder with React Flow canvas
+- **Node types**: Trigger, Agent (LLM), Tool, Condition, Communication, Iterator
+- **Triggers**: Manual, cron schedules, webhooks, chat-based activation
+- **Agent tools**: `workflow_create`, `workflow_execute`, `workflow_list` — the AI can create and manage workflows from natural language prompts
+- **Execution engine**: BullMQ-powered reliable job queue with variable resolution (`{{node.output}}`)
+- **API**: Full REST API at `/api/platform/workflows/*` — see [WORKFLOW-API.md](docs/WORKFLOW-API.md)
 
 ### Runtime + safety
 

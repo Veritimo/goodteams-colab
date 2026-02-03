@@ -1,0 +1,9 @@
+{
+  "id": "teams",
+  "channels": ["teams"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
