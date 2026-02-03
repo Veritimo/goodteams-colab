@@ -78,17 +78,21 @@ async function handleGoogleLogin(
     const returnUrl = url.searchParams.get("return_url") || "/";
     const loginHint = url.searchParams.get("login_hint") || undefined;
 
-    // Define scopes for full Google Workspace access
-    const scopes = [
-      GOOGLE_SCOPES.OPENID,
-      GOOGLE_SCOPES.EMAIL,
-      GOOGLE_SCOPES.PROFILE,
-      GOOGLE_SCOPES.DRIVE_READ,
-      GOOGLE_SCOPES.GMAIL_READ,
-      GOOGLE_SCOPES.GMAIL_SEND,
-      GOOGLE_SCOPES.CALENDAR_READ,
-      GOOGLE_SCOPES.CALENDAR_EVENTS,
-    ];
+    // Define scopes - use basic scopes if requested, otherwise full access
+    // Add ?minimal=1 to login URL to bypass verification during dev
+    const useMinimalScopes = url.searchParams.get("minimal") === "1";
+    const scopes = useMinimalScopes
+      ? [GOOGLE_SCOPES.OPENID, GOOGLE_SCOPES.EMAIL, GOOGLE_SCOPES.PROFILE]
+      : [
+          GOOGLE_SCOPES.OPENID,
+          GOOGLE_SCOPES.EMAIL,
+          GOOGLE_SCOPES.PROFILE,
+          GOOGLE_SCOPES.DRIVE_READ,
+          GOOGLE_SCOPES.GMAIL_READ,
+          GOOGLE_SCOPES.GMAIL_SEND,
+          GOOGLE_SCOPES.CALENDAR_READ,
+          GOOGLE_SCOPES.CALENDAR_EVENTS,
+        ];
 
     // Create state for CSRF protection
     const state = createOAuthState({
