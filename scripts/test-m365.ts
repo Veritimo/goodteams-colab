@@ -50,10 +50,40 @@ async function testM365() {
   // Test various M365 APIs
   console.log("=== Testing Microsoft Graph APIs ===\n");
 
+  // Profile
   await callGraph("/me", "Profile (/me)");
+  
+  // OneDrive (personal drive)
   await callGraph("/me/drive/root/children?$top=5", "OneDrive Files");
+  
+  // SharePoint
+  console.log("--- SharePoint ---");
+  await callGraph("/sites?search=*", "SharePoint Sites (search)");
+  await callGraph("/sites/root", "SharePoint Root Site");
+  
+  // Get first site and list its drives/lists
+  try {
+    const sitesRes = await fetch(`${GRAPH_BASE}/sites?search=*&$top=1`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const sitesData = await sitesRes.json();
+    if (sitesData.value && sitesData.value.length > 0) {
+      const siteId = sitesData.value[0].id;
+      console.log(`   Found site: ${sitesData.value[0].displayName} (${siteId})\n`);
+      await callGraph(`/sites/${siteId}/drives`, "SharePoint Document Libraries");
+      await callGraph(`/sites/${siteId}/lists?$top=5`, "SharePoint Lists");
+    }
+  } catch (e: any) {
+    console.log("   Could not enumerate SharePoint site details:", e.message);
+  }
+  
+  // Outlook
+  console.log("--- Outlook ---");
   await callGraph("/me/messages?$top=3", "Outlook Messages");
   await callGraph("/me/events?$top=3", "Calendar Events");
+  
+  // Teams
+  console.log("--- Teams ---");
   await callGraph("/me/joinedTeams", "Teams Memberships");
 
   await prisma.$disconnect();
