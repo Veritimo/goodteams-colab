@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   GitBranch,
   Plus,
@@ -34,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { getWorkflows } from "../lib/api";
 
 // Types
 interface Workflow {
@@ -63,104 +65,27 @@ interface WorkflowExecution {
   duration?: number;
 }
 
-// Mock data
-const mockWorkflows: Workflow[] = [
-  {
-    id: "wf-1",
-    name: "Customer Onboarding",
-    description: "Automated welcome sequence for new customers",
-    status: "active",
-    triggerType: "event",
-    lastRun: "2024-01-15T14:30:00Z",
-    nextRun: undefined,
-    successRate: 98.5,
-    totalRuns: 1523,
-    organizationId: "org-1",
-    organizationName: "Acme Corp",
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2024-01-15T14:30:00Z",
-  },
-  {
-    id: "wf-2",
-    name: "Daily Report Generation",
-    description: "Generate and send daily analytics reports",
-    status: "active",
-    triggerType: "schedule",
-    lastRun: "2024-01-15T06:00:00Z",
-    nextRun: "2024-01-16T06:00:00Z",
-    successRate: 100,
-    totalRuns: 365,
-    organizationId: "org-1",
-    organizationName: "Acme Corp",
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2024-01-15T06:00:00Z",
-  },
-  {
-    id: "wf-3",
-    name: "Slack Notification Pipeline",
-    description: "Send notifications to Slack channels",
-    status: "disabled",
-    triggerType: "webhook",
-    lastRun: "2024-01-10T12:00:00Z",
-    successRate: 95.2,
-    totalRuns: 892,
-    organizationId: "org-2",
-    organizationName: "TechStart Inc",
-    createdAt: "2024-01-05T00:00:00Z",
-    updatedAt: "2024-01-10T12:00:00Z",
-  },
-  {
-    id: "wf-4",
-    name: "Data Sync Pipeline",
-    description: "Sync data between external systems",
-    status: "draft",
+// Transform API workflow to internal format
+function transformApiWorkflow(apiWorkflow: any): Workflow {
+  return {
+    id: apiWorkflow.id,
+    name: apiWorkflow.name,
+    description: apiWorkflow.description || undefined,
+    status:
+      apiWorkflow.status === "active"
+        ? "active"
+        : apiWorkflow.status === "inactive"
+          ? "disabled"
+          : "draft",
     triggerType: "manual",
     successRate: 0,
     totalRuns: 0,
-    organizationId: "org-2",
-    organizationName: "TechStart Inc",
-    createdAt: "2024-01-14T00:00:00Z",
-    updatedAt: "2024-01-14T00:00:00Z",
-  },
-];
-
-const mockExecutions: WorkflowExecution[] = [
-  {
-    id: "exec-1",
-    workflowId: "wf-1",
-    status: "completed",
-    triggeredBy: "system",
-    startedAt: "2024-01-15T14:30:00Z",
-    completedAt: "2024-01-15T14:30:45Z",
-    duration: 45000,
-  },
-  {
-    id: "exec-2",
-    workflowId: "wf-1",
-    status: "completed",
-    triggeredBy: "user@example.com",
-    startedAt: "2024-01-15T12:00:00Z",
-    completedAt: "2024-01-15T12:00:32Z",
-    duration: 32000,
-  },
-  {
-    id: "exec-3",
-    workflowId: "wf-1",
-    status: "failed",
-    triggeredBy: "system",
-    startedAt: "2024-01-15T10:00:00Z",
-    completedAt: "2024-01-15T10:01:15Z",
-    error: "Connection timeout to external API",
-    duration: 75000,
-  },
-  {
-    id: "exec-4",
-    workflowId: "wf-1",
-    status: "running",
-    triggeredBy: "webhook",
-    startedAt: "2024-01-15T15:00:00Z",
-  },
-];
+    organizationId: apiWorkflow.organizationId,
+    organizationName: "Organization",
+    createdAt: apiWorkflow.createdAt,
+    updatedAt: apiWorkflow.updatedAt,
+  };
+}
 
 // Helper functions
 function formatDate(dateString?: string): string {
@@ -467,13 +392,31 @@ function WorkflowDetail({
 }
 
 export function Workflows() {
-  const [workflows, setWorkflows] = useState<Workflow[]>(mockWorkflows);
+  const { data: workflowsResponse, isLoading } = useQuery({
+    queryKey: ["org-workflows"],
+    queryFn: getWorkflows,
+    staleTime: 30000,
+  });
+
+  // Transform API response
+  const apiWorkflows: Workflow[] = Array.isArray(workflowsResponse?.data)
+    ? workflowsResponse.data.map(transformApiWorkflow)
+    : Array.isArray(workflowsResponse)
+      ? (workflowsResponse as any[]).map(transformApiWorkflow)
+      : [];
+
+  const [localWorkflows, setLocalWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [isDesignerOpen, setIsDesignerOpen] = useState(false);
-  const [isLoading] = useState(false);
+
+  // Combine API workflows with locally added ones
+  const workflows = [...apiWorkflows, ...localWorkflows];
+
+  // Empty executions - would come from a separate API
+  const executions: WorkflowExecution[] = [];
 
   const handleToggleStatus = useCallback((id: string, enabled: boolean) => {
-    setWorkflows((prev) =>
+    setLocalWorkflows((prev) =>
       prev.map((wf) => (wf.id === id ? { ...wf, status: enabled ? "active" : "disabled" } : wf)),
     );
   }, []);
@@ -487,7 +430,7 @@ export function Workflows() {
     return (
       <WorkflowDetail
         workflow={selectedWorkflow}
-        executions={mockExecutions}
+        executions={executions}
         onBack={() => setSelectedWorkflow(null)}
         onRun={handleRunWorkflow}
         onToggleStatus={(enabled) => {
@@ -566,11 +509,13 @@ export function Workflows() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : workflows.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <GitBranch className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No workflows found</p>
-              <Button variant="link" onClick={() => setIsDesignerOpen(true)}>
-                Create your first workflow
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <GitBranch className="h-12 w-12 mb-4 opacity-50" />
+              <p className="font-medium">No workflows yet</p>
+              <p className="text-sm mb-4">Create your first workflow to automate tasks.</p>
+              <Button onClick={() => setIsDesignerOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Workflow
               </Button>
             </div>
           ) : (

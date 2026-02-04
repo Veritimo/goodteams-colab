@@ -81,6 +81,12 @@ export const handleOrg: RouteHandler = async (
       return;
     }
 
+    // POST /api/platform/org/entra/disconnect - Disconnect Entra integration
+    if (path === "/api/platform/org/entra/disconnect" && method === "POST") {
+      await handleDisconnectEntra(req, res, ctx);
+      return;
+    }
+
     // GET /api/platform/org - Get current organization
     if (path === "/api/platform/org" && method === "GET") {
       await handleGetOrganization(req, res, ctx);
@@ -258,6 +264,70 @@ async function handleUpdateOrganization(
   };
 
   sendJson(res, response);
+}
+
+/**
+ * POST /api/platform/org/entra/disconnect - Disconnect Entra integration
+ *
+ * Removes the Microsoft Entra tenant connection from the organization.
+ * This allows re-onboarding with a different tenant or re-consenting.
+ * Admin only.
+ */
+async function handleDisconnectEntra(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: RequestContext,
+): Promise<void> {
+  // Require admin + org
+  const middleware = composeMiddleware(requireAuth(), requireOrganization(), requireAdmin());
+  if (!(await middleware(ctx, res))) return;
+
+  // Get current org
+  const currentOrg = await prisma.organization.findUnique({
+    where: { id: ctx.user!.orgId },
+  });
+
+  if (!currentOrg) {
+    sendError(res, "NOT_FOUND", "Organization not found");
+    return;
+  }
+
+  if (!currentOrg.externalTenantId) {
+    sendError(res, "BAD_REQUEST", "Organization is not connected to Microsoft Entra");
+    return;
+  }
+
+  const previousTenantId = currentOrg.externalTenantId;
+
+  // Remove the tenant connection
+  await prisma.organization.update({
+    where: { id: ctx.user!.orgId },
+    data: {
+      externalTenantId: null,
+    },
+  });
+
+  // Log audit event
+  const auditCtx: AuditContext = {
+    user: {
+      id: ctx.user!.id,
+      role: mapRoleToPrisma(ctx.user!.role),
+      organizationId: ctx.user!.orgId,
+    },
+    ip: ctx.ip,
+  };
+
+  await logAudit(
+    auditCtx,
+    "organization.entra.disconnected",
+    TARGET_TYPES.ORGANIZATION,
+    ctx.user!.orgId,
+    {
+      previousTenantId,
+    },
+  );
+
+  sendJson(res, { success: true, message: "Microsoft Entra disconnected successfully" });
 }
 
 /**

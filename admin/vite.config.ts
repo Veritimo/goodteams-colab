@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, '../src/platform/ui/admin'),
       '@platform-admin': path.resolve(__dirname, '../src/platform/ui/platform-admin'),
+      '@onboarding': path.resolve(__dirname, '../src/platform/ui/onboarding'),
       '@platform': path.resolve(__dirname, '../src/platform'),
     },
   },

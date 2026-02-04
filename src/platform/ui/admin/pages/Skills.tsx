@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   Sparkles,
   Plus,
@@ -38,6 +39,7 @@ import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { Textarea } from "../components/ui/textarea";
+import { getSkills } from "../lib/api";
 
 // Types
 interface Skill {
@@ -65,116 +67,20 @@ interface SkillConfigOption {
   required?: boolean;
 }
 
-// Mock data
-const mockSkills: Skill[] = [
-  {
-    id: "skill-browser",
-    name: "Browser Automation",
-    description:
-      "Control web browsers for automation tasks, including navigation, clicking, and data extraction.",
-    version: "1.2.0",
-    author: "OpenClaw",
-    status: "enabled",
+// Transform API skill to internal format
+function transformApiSkill(apiSkill: any): Skill {
+  return {
+    id: apiSkill.id,
+    name: apiSkill.name,
+    description: apiSkill.description || "No description available",
+    version: "1.0.0",
+    author: "Organization",
+    status: apiSkill.enabled ? "enabled" : "disabled",
     source: "bundled",
-    tools: [
-      "browser_navigate",
-      "browser_click",
-      "browser_type",
-      "browser_screenshot",
-      "browser_extract",
-    ],
-    config: {
-      headless: {
-        type: "boolean",
-        label: "Headless Mode",
-        description: "Run browser without visible window",
-        default: true,
-      },
-      timeout: {
-        type: "number",
-        label: "Default Timeout",
-        description: "Default timeout in seconds for browser operations",
-        default: 30,
-      },
-    },
-    lastUpdated: "2024-01-10T00:00:00Z",
-  },
-  {
-    id: "skill-github",
-    name: "GitHub Integration",
-    description: "Interact with GitHub repositories, issues, pull requests, and actions.",
-    version: "2.0.1",
-    author: "OpenClaw",
-    status: "enabled",
-    source: "bundled",
-    tools: ["github_repo", "github_issue", "github_pr", "github_actions"],
-    config: {
-      defaultOrg: {
-        type: "string",
-        label: "Default Organization",
-        description: "Default GitHub organization to use",
-      },
-    },
-    lastUpdated: "2024-01-12T00:00:00Z",
-  },
-  {
-    id: "skill-slack",
-    name: "Slack Messaging",
-    description: "Send messages, manage channels, and interact with Slack workspaces.",
-    version: "1.5.0",
-    author: "OpenClaw",
-    status: "disabled",
-    source: "bundled",
-    tools: ["slack_send", "slack_channel", "slack_thread"],
-    config: {
-      defaultChannel: {
-        type: "string",
-        label: "Default Channel",
-        description: "Default Slack channel for messages",
-      },
-    },
-    lastUpdated: "2024-01-08T00:00:00Z",
-  },
-  {
-    id: "skill-database",
-    name: "Database Query",
-    description: "Execute SQL queries against PostgreSQL, MySQL, and SQLite databases.",
-    version: "1.0.3",
-    author: "Community",
-    status: "enabled",
-    source: "clawhub",
-    tools: ["db_query", "db_execute", "db_schema"],
-    dependencies: ["pg", "mysql2", "better-sqlite3"],
-    config: {
-      connectionString: {
-        type: "string",
-        label: "Connection String",
-        description: "Database connection string (stored securely)",
-        required: true,
-      },
-      maxConnections: {
-        type: "number",
-        label: "Max Connections",
-        description: "Maximum number of connections in the pool",
-        default: 10,
-      },
-    },
-    lastUpdated: "2024-01-05T00:00:00Z",
-  },
-  {
-    id: "skill-custom",
-    name: "Custom Script Runner",
-    description: "Execute custom Python and Node.js scripts with sandboxing.",
-    version: "0.9.0",
-    author: "Local",
-    status: "error",
-    source: "local",
-    tools: ["run_python", "run_node"],
-    installPath: "/home/user/.openclaw/skills/custom-runner",
-    error: "Missing dependency: python3.11",
-    lastUpdated: "2024-01-14T00:00:00Z",
-  },
-];
+    tools: [],
+    lastUpdated: apiSkill.updatedAt || apiSkill.createdAt,
+  };
+}
 
 // Helper functions
 function getSourceBadge(source: Skill["source"]) {
@@ -558,14 +464,28 @@ function InstallSkillDialog({
 }
 
 export function Skills() {
-  const [skills, setSkills] = useState<Skill[]>(mockSkills);
+  const { data: skillsResponse, isLoading } = useQuery({
+    queryKey: ["org-skills"],
+    queryFn: getSkills,
+    staleTime: 30000,
+  });
+
+  // Transform API response
+  const apiSkills: Skill[] = Array.isArray(skillsResponse?.data)
+    ? skillsResponse.data.map(transformApiSkill)
+    : [];
+
+  const [localSkills, setLocalSkills] = useState<Skill[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [isInstallOpen, setIsInstallOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterSource, setFilterSource] = useState<"all" | Skill["source"]>("all");
 
+  // Combine API skills with locally added ones
+  const skills = [...apiSkills, ...localSkills];
+
   const handleToggleSkill = useCallback((id: string, enabled: boolean) => {
-    setSkills((prev) =>
+    setLocalSkills((prev) =>
       prev.map((skill) =>
         skill.id === id ? { ...skill, status: enabled ? "enabled" : "disabled" } : skill,
       ),
@@ -703,21 +623,35 @@ export function Skills() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredSkills.map((skill) => (
-          <SkillCard
-            key={skill.id}
-            skill={skill}
-            onSelect={() => setSelectedSkill(skill)}
-            onToggle={(enabled) => handleToggleSkill(skill.id, enabled)}
-          />
-        ))}
-      </div>
-
-      {filteredSkills.length === 0 && (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : skills.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+          <Sparkles className="h-12 w-12 mb-4 opacity-50" />
+          <p className="font-medium">No skills installed</p>
+          <p className="text-sm mb-4">Install skills to extend your agent's capabilities.</p>
+          <Button onClick={() => setIsInstallOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Install Skill
+          </Button>
+        </div>
+      ) : filteredSkills.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p>No skills found matching your criteria</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredSkills.map((skill) => (
+            <SkillCard
+              key={skill.id}
+              skill={skill}
+              onSelect={() => setSelectedSkill(skill)}
+              onToggle={(enabled) => handleToggleSkill(skill.id, enabled)}
+            />
+          ))}
         </div>
       )}
 

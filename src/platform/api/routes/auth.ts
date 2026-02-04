@@ -117,8 +117,8 @@ async function handleConsentInit(
       return;
     }
 
-    // Check admin role
-    if (!["ADMIN", "SUPER_ADMIN"].includes(ctx.user.role)) {
+    // Check admin role (context uses lowercase: owner, admin, member, viewer)
+    if (!["admin", "owner"].includes(ctx.user.role)) {
       sendError(res, "FORBIDDEN", "Admin access required to initiate consent");
       return;
     }
@@ -326,8 +326,9 @@ async function handleOnboardingConsentCallback(
     });
 
     if (existingOrg) {
-      // Org already exists - redirect to login
-      redirect(res, "/login?message=organization_exists");
+      // Org already exists - redirect to login on the admin UI
+      const adminUiBase = process.env.ADMIN_UI_URL || `http://${req.headers.host}`;
+      redirect(res, `${adminUiBase}/admin?message=organization_exists`);
       return;
     }
 
@@ -368,17 +369,17 @@ async function handleOnboardingConsentCallback(
 
     // Redirect to setup wizard with org ID
     // The user will complete SSO login as part of the setup
-    const setupUrl = new URL(
-      stateData.returnUrl || "/onboarding/setup",
-      `http://${req.headers.host}`,
-    );
+    // Use ADMIN_UI_URL for frontend, fallback to same host for production (when UI is served from same origin)
+    const adminUiBase = process.env.ADMIN_UI_URL || `http://${req.headers.host}`;
+    const setupUrl = new URL(stateData.returnUrl || "/onboarding/setup", adminUiBase);
     setupUrl.searchParams.set("org", organization.id);
     setupUrl.searchParams.set("tenant", tenantId);
 
     // Redirect through login to establish session
     const loginUrl = new URL("/api/platform/auth/entra/login", `http://${req.headers.host}`);
     loginUrl.searchParams.set("org", organization.id);
-    loginUrl.searchParams.set("returnUrl", setupUrl.pathname + setupUrl.search);
+    // Pass full URL for dev (separate UI server) or relative path for prod
+    loginUrl.searchParams.set("returnUrl", setupUrl.toString());
 
     redirect(res, loginUrl.toString());
   } catch (error) {
@@ -489,14 +490,77 @@ async function handleLoginCallback(
       },
     });
 
+    // Check if this is an onboarding flow (org ID in state)
+    const isOnboarding = !!stateData.organizationId;
+
+    // For onboarding, check if this is the first user for the org
+    let shouldBeAdmin = false;
+    if (isOnboarding && stateData.organizationId) {
+      const existingOrgUsers = await prisma.user.count({
+        where: { organizationId: stateData.organizationId },
+      });
+      shouldBeAdmin = existingOrgUsers === 0;
+    }
+
     if (user) {
-      // Update existing user
-      await prisma.user.update({
+      // Update existing user - link to org if from onboarding
+      const updateData: any = {
+        externalId: tokens.microsoftId,
+        username: tokens.displayName || user.username,
+      };
+
+      // SAFEGUARD: If user already has an org but this is an onboarding flow,
+      // reconnect their existing org instead of using the newly created one
+      if (isOnboarding && stateData.organizationId && user.organizationId) {
+        // User already belongs to an org - this is a reconnect scenario
+
+        // FIRST: Delete the orphaned org (it has the externalTenantId we need)
+        if (stateData.organizationId !== user.organizationId) {
+          try {
+            await prisma.organization.delete({
+              where: { id: stateData.organizationId },
+            });
+            console.log(
+              `[auth] Cleaned up orphaned org ${stateData.organizationId} - user reconnecting to existing org ${user.organizationId}`,
+            );
+          } catch (e) {
+            // Org might have users or other references - just log and continue
+            console.warn(`[auth] Could not delete orphaned org ${stateData.organizationId}:`, e);
+          }
+        }
+
+        // THEN: Update their existing org with the new tenant ID
+        await prisma.organization.update({
+          where: { id: user.organizationId },
+          data: { externalTenantId: tokens.tenantId },
+        });
+
+        // Log audit event for reconnection
+        await prisma.auditLog.create({
+          data: {
+            organizationId: user.organizationId,
+            actorId: user.id,
+            actorRole: user.role,
+            action: "organization.entra.reconnected",
+            targetType: "organization",
+            targetId: user.organizationId,
+            details: {
+              tenantId: tokens.tenantId,
+              method: "onboarding_reconnect",
+            },
+          },
+        });
+      } else if (isOnboarding && stateData.organizationId && !user.organizationId) {
+        // Link to org and set as admin if this is onboarding and user isn't already in an org
+        updateData.organizationId = stateData.organizationId;
+        if (shouldBeAdmin) {
+          updateData.role = "ADMIN";
+        }
+      }
+
+      user = await prisma.user.update({
         where: { id: user.id },
-        data: {
-          externalId: tokens.microsoftId,
-          username: tokens.displayName || user.username,
-        },
+        data: updateData,
       });
     } else {
       // Create new user
@@ -510,7 +574,7 @@ async function handleLoginCallback(
           email: tokens.email,
           username: tokens.displayName,
           externalId: tokens.microsoftId,
-          role: "USER",
+          role: shouldBeAdmin ? "ADMIN" : "USER",
           organizationId: stateData.organizationId,
         },
       });

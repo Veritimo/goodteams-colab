@@ -1,9 +1,30 @@
-import { useQuery } from "@tanstack/react-query";
-import { Users, Database, GitBranch, Activity, TrendingUp, BookOpen } from "lucide-react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import {
+  Users,
+  Database,
+  GitBranch,
+  Activity,
+  TrendingUp,
+  BookOpen,
+  FileText,
+  Link2,
+  Link2Off,
+  Loader2,
+} from "lucide-react";
+import { useState } from "react";
 import { useAuth } from "../components/AuthProvider";
 import { Badge } from "../components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
-import { getUsers, getConnectors, getWorkflows, getKnowledgeCollections } from "../lib/api";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import {
+  getUsers,
+  getConnectors,
+  getWorkflows,
+  getKnowledgeCollections,
+  getAuditLogs,
+  getOrganization,
+  disconnectEntra,
+} from "../lib/api";
 import { cn } from "../lib/utils";
 
 interface StatCardProps {
@@ -42,42 +63,50 @@ function StatCard({ title, value, subtitle, icon: Icon, trend }: StatCardProps) 
   );
 }
 
-// Mock activity data
-const mockActivity = [
-  {
-    id: "1",
-    action: "User invited",
-    description: "jane.smith@company.com was invited to the team",
-    time: "5 minutes ago",
-  },
-  {
-    id: "2",
-    action: "Workflow activated",
-    description: "Customer Support Bot is now active",
-    time: "1 hour ago",
-  },
-  {
-    id: "3",
-    action: "Connector configured",
-    description: "Salesforce connector connected",
-    time: "2 hours ago",
-  },
-  {
-    id: "4",
-    action: "Knowledge synced",
-    description: "SharePoint collection refreshed (234 docs)",
-    time: "3 hours ago",
-  },
-  {
-    id: "5",
-    action: "Model updated",
-    description: "Default model changed to GPT-4",
-    time: "5 hours ago",
-  },
-];
+// Format relative time
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+}
+
+// Format action for display
+function formatAction(action: string): string {
+  return action
+    .split(".")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 export function Dashboard() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+
+  const { data: orgResponse, isLoading: isLoadingOrg } = useQuery({
+    queryKey: ["org"],
+    queryFn: async () => {
+      const result = await getOrganization("");
+      return result.data;
+    },
+    staleTime: 30000,
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: disconnectEntra,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["org"] });
+      setShowDisconnectConfirm(false);
+    },
+  });
 
   const { data: usersResponse } = useQuery({
     queryKey: ["org-users"],
@@ -103,6 +132,12 @@ export function Dashboard() {
     staleTime: 30000,
     enabled: false, // Knowledge base API not yet implemented
     retry: false,
+  });
+
+  const { data: auditResponse, isLoading: isLoadingAudit } = useQuery({
+    queryKey: ["org-audit-recent"],
+    queryFn: getAuditLogs,
+    staleTime: 30000,
   });
 
   // Handle various API response shapes - ensure arrays
@@ -138,6 +173,9 @@ export function Dashboard() {
   const activeConnectors = connectors.filter((c: any) => c.status === "CONNECTED").length;
   const activeWorkflows = workflows.filter((w: any) => w.status === "active").length;
 
+  // Get recent audit logs (up to 5)
+  const recentActivity = Array.isArray(auditResponse?.data) ? auditResponse.data.slice(0, 5) : [];
+
   return (
     <div className="space-y-6">
       {/* Welcome banner */}
@@ -149,6 +187,88 @@ export function Dashboard() {
           Here's what's happening in your organization today.
         </p>
       </div>
+
+      {/* Entra Connection Status */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {orgResponse?.externalTenantId ? (
+                <Link2 className="h-5 w-5 text-green-600" />
+              ) : (
+                <Link2Off className="h-5 w-5 text-muted-foreground" />
+              )}
+              <CardTitle className="text-base">Microsoft Entra</CardTitle>
+            </div>
+            <Badge variant={orgResponse?.externalTenantId ? "default" : "secondary"}>
+              {isLoadingOrg
+                ? "Loading..."
+                : orgResponse?.externalTenantId
+                  ? "Connected"
+                  : "Disconnected"}
+            </Badge>
+          </div>
+          <CardDescription>
+            {orgResponse?.externalTenantId
+              ? "Your organization is connected to Microsoft 365"
+              : "Connect to Microsoft 365 to enable SSO and integrations"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {orgResponse?.externalTenantId ? (
+            <div className="space-y-3">
+              <div className="text-sm">
+                <span className="text-muted-foreground">Tenant ID: </span>
+                <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
+                  {orgResponse.externalTenantId}
+                </code>
+              </div>
+              {showDisconnectConfirm ? (
+                <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+                  <span className="text-sm flex-1">
+                    Are you sure? This will disconnect the Microsoft integration.
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDisconnectConfirm(false)}
+                    disabled={disconnectMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => disconnectMutation.mutate()}
+                    disabled={disconnectMutation.isPending}
+                  >
+                    {disconnectMutation.isPending && (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    Disconnect
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setShowDisconnectConfirm(true)}>
+                  Disconnect
+                </Button>
+              )}
+            </div>
+          ) : (
+            <Button
+              onClick={() => {
+                const returnUrl = encodeURIComponent(window.location.origin + "/admin");
+                window.location.href = `/api/platform/auth/entra/onboard?returnUrl=${returnUrl}`;
+              }}
+            >
+              <svg className="w-4 h-4 mr-2" viewBox="0 0 21 21" fill="currentColor">
+                <path d="M0 0h10v10H0V0zm11 0h10v10H11V0zM0 11h10v10H0V11zm11 0h10v10H11V11z" />
+              </svg>
+              Connect with Microsoft
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -187,22 +307,38 @@ export function Dashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {mockActivity.map((activity) => (
-              <div
-                key={activity.id}
-                className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{activity.action}</Badge>
+          {isLoadingAudit ? (
+            <div className="flex items-center justify-center py-8 text-muted-foreground">
+              <div className="animate-pulse">Loading activity...</div>
+            </div>
+          ) : recentActivity.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <FileText className="h-8 w-8 mb-2 opacity-50" />
+              <p className="text-sm">No recent activity</p>
+              <p className="text-xs">Activity will appear here as you use the platform</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {recentActivity.map((activity: any) => (
+                <div
+                  key={activity.id}
+                  className="flex items-center justify-between border-b pb-4 last:border-0 last:pb-0"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{formatAction(activity.action)}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {activity.resourceType}: {activity.resourceId}
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground">{activity.description}</p>
+                  <p className="text-xs text-muted-foreground whitespace-nowrap">
+                    {formatRelativeTime(activity.createdAt)}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground whitespace-nowrap">{activity.time}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

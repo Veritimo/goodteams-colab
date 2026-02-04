@@ -67,6 +67,14 @@ export async function updateOrganization(
   });
 }
 
+export async function disconnectEntra(): Promise<
+  ApiResponse<{ success: boolean; message: string }>
+> {
+  return fetchApi<{ success: boolean; message: string }>("/org/entra/disconnect", {
+    method: "POST",
+  });
+}
+
 // Users
 export interface User {
   id: string;

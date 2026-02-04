@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   FileText,
   Search,
@@ -38,6 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table";
+import { getAuditLogs } from "../lib/api";
 
 // Types
 interface AuditLogEntry {
@@ -57,125 +59,46 @@ interface AuditLogEntry {
   changes?: { field: string; oldValue: unknown; newValue: unknown }[];
 }
 
-// Mock data
-const mockLogs: AuditLogEntry[] = [
-  {
-    id: "log-1",
-    timestamp: "2024-01-15T15:45:32Z",
-    userId: "user-1",
-    userName: "John Doe",
-    userEmail: "john@acme.com",
-    action: "user.login",
-    actionCategory: "auth",
-    resource: "session-abc123",
-    resourceType: "user",
-    status: "success",
-    ipAddress: "192.168.1.100",
-    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-    details: { method: "password", mfa: true },
-  },
-  {
-    id: "log-2",
-    timestamp: "2024-01-15T15:30:00Z",
-    userId: "user-2",
-    userName: "Jane Smith",
-    userEmail: "jane@acme.com",
-    action: "workflow.create",
-    actionCategory: "data",
-    resource: "wf-xyz789",
-    resourceType: "workflow",
-    status: "success",
-    ipAddress: "192.168.1.101",
-    details: { workflowName: "Customer Onboarding v2" },
-  },
-  {
-    id: "log-3",
-    timestamp: "2024-01-15T15:15:00Z",
-    userId: "user-1",
-    userName: "John Doe",
-    userEmail: "john@acme.com",
-    action: "model.config.update",
-    actionCategory: "config",
-    resource: "anthropic",
-    resourceType: "model",
-    status: "success",
-    ipAddress: "192.168.1.100",
-    changes: [
-      { field: "defaultModel", oldValue: "claude-3-5-sonnet", newValue: "claude-sonnet-4" },
-    ],
-  },
-  {
-    id: "log-4",
-    timestamp: "2024-01-15T14:45:00Z",
-    userId: "user-3",
-    userName: "Bob Wilson",
-    userEmail: "bob@techstart.io",
-    action: "api_key.create",
-    actionCategory: "admin",
-    resource: "key-def456",
-    resourceType: "api_key",
-    status: "success",
-    ipAddress: "10.0.0.50",
-    details: { keyName: "Production API Key", scopes: ["read", "write"] },
-  },
-  {
-    id: "log-5",
-    timestamp: "2024-01-15T14:30:00Z",
-    userId: "system",
-    userName: "System",
-    userEmail: "system@internal",
-    action: "skill.sync",
-    actionCategory: "system",
-    resource: "skill-browser",
-    resourceType: "skill",
-    status: "success",
-    ipAddress: "127.0.0.1",
-    details: { version: "1.2.0", source: "bundled" },
-  },
-  {
-    id: "log-6",
-    timestamp: "2024-01-15T14:00:00Z",
-    userId: "user-4",
-    userName: "Alice Brown",
-    userEmail: "alice@acme.com",
-    action: "user.login",
-    actionCategory: "auth",
-    resource: "session-failed",
-    resourceType: "user",
-    status: "failure",
-    ipAddress: "203.0.113.50",
-    details: { reason: "Invalid password", attempts: 3 },
-  },
-  {
-    id: "log-7",
-    timestamp: "2024-01-15T13:45:00Z",
-    userId: "user-2",
-    userName: "Jane Smith",
-    userEmail: "jane@acme.com",
-    action: "organization.member.invite",
-    actionCategory: "admin",
-    resource: "org-acme",
-    resourceType: "organization",
-    status: "success",
-    ipAddress: "192.168.1.101",
-    details: { invitedEmail: "newuser@acme.com", role: "member" },
-  },
-  {
-    id: "log-8",
-    timestamp: "2024-01-15T13:30:00Z",
-    userId: "user-1",
-    userName: "John Doe",
-    userEmail: "john@acme.com",
-    action: "setting.update",
-    actionCategory: "config",
-    resource: "security-settings",
-    resourceType: "setting",
-    status: "warning",
-    ipAddress: "192.168.1.100",
-    details: { warning: "MFA requirement disabled" },
-    changes: [{ field: "requireMfa", oldValue: true, newValue: false }],
-  },
-];
+// Transform API response to AuditLogEntry format
+function transformAuditLog(log: any): AuditLogEntry {
+  // Infer action category from action string
+  const actionCategory = ((): AuditLogEntry["actionCategory"] => {
+    if (log.action.startsWith("user.login") || log.action.startsWith("auth.")) return "auth";
+    if (log.action.includes("config") || log.action.includes("setting")) return "config";
+    if (
+      log.action.includes("admin") ||
+      log.action.includes("invite") ||
+      log.action.includes("role")
+    )
+      return "admin";
+    if (log.action.startsWith("system.") || log.action.includes("sync")) return "system";
+    return "data";
+  })();
+
+  // Infer status from details or default to success
+  const status = ((): AuditLogEntry["status"] => {
+    if (log.details?.status === "failure" || log.details?.error) return "failure";
+    if (log.details?.warning) return "warning";
+    return "success";
+  })();
+
+  return {
+    id: log.id,
+    timestamp: log.createdAt,
+    userId: log.userId,
+    userName: log.details?.userName || "Unknown User",
+    userEmail: log.details?.userEmail || "",
+    action: log.action,
+    actionCategory,
+    resource: log.resourceId,
+    resourceType: log.resourceType as AuditLogEntry["resourceType"],
+    status,
+    ipAddress: log.details?.ipAddress || "-",
+    userAgent: log.details?.userAgent,
+    details: log.details,
+    changes: log.details?.changes,
+  };
+}
 
 // Helper functions
 function formatTimestamp(timestamp: string): string {
@@ -354,11 +277,24 @@ function LogDetailDialog({
 }
 
 export function AuditLogs() {
-  const [logs] = useState<AuditLogEntry[]>(mockLogs);
+  const {
+    data: auditResponse,
+    isLoading: isLoadingLogs,
+    refetch,
+  } = useQuery({
+    queryKey: ["audit-logs"],
+    queryFn: getAuditLogs,
+    staleTime: 30000,
+  });
+
+  // Transform API response to expected format
+  const logs: AuditLogEntry[] = Array.isArray(auditResponse?.data)
+    ? auditResponse.data.map(transformAuditLog)
+    : [];
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
 
@@ -371,10 +307,8 @@ export function AuditLogs() {
   const [dateTo, setDateTo] = useState("");
 
   const handleRefresh = useCallback(async () => {
-    setIsLoading(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    setIsLoading(false);
-  }, []);
+    await refetch();
+  }, [refetch]);
 
   const handleViewDetails = useCallback((log: AuditLogEntry) => {
     setSelectedLog(log);
@@ -438,8 +372,8 @@ export function AuditLogs() {
           <h1 className="text-2xl font-bold">Audit Logs</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
-            {isLoading ? (
+          <Button variant="outline" onClick={handleRefresh} disabled={isLoadingLogs}>
+            {isLoadingLogs ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4" />
@@ -614,10 +548,20 @@ export function AuditLogs() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
+                {isLoadingLogs ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                    </TableCell>
+                  </TableRow>
+                ) : logs.length === 0 && !hasActiveFilters ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p className="font-medium">No audit logs yet</p>
+                      <p className="text-sm">
+                        Activity will be recorded here as users interact with the platform.
+                      </p>
                     </TableCell>
                   </TableRow>
                 ) : paginatedLogs.length === 0 ? (

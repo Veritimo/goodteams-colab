@@ -48,6 +48,9 @@ function ThemeWrapper({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Onboarding imports (no auth required)
+import { OnboardingApp } from '@onboarding/index';
+
 /**
  * CombinedAdminApp - Routes to either Org Admin or Platform Admin based on URL path.
  *
@@ -65,6 +68,11 @@ function CombinedAdminApp() {
         <PlatformAdminApp />
       </PlatformAuthProvider>
     );
+  }
+
+  // Onboarding routes (no auth required)
+  if (location.pathname.startsWith('/onboarding')) {
+    return <OnboardingApp />;
   }
 
   // Org Admin routes (default)

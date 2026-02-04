@@ -15,7 +15,7 @@ import { Welcome } from "./pages/Welcome";
 export function OnboardingApp() {
   return (
     <Routes>
-      <Route element={<OnboardingLayout />}>
+      <Route path="/onboarding" element={<OnboardingLayout />}>
         <Route index element={<Welcome />} />
         <Route path="consent" element={<Consent />} />
         <Route path="creating" element={<Creating />} />

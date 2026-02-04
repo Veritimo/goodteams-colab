@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   Brain,
   Plus,
@@ -47,6 +48,7 @@ import {
   TableRow,
 } from "../components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
+import { getModels } from "../lib/api";
 
 // Types
 interface ModelProvider {
@@ -89,136 +91,41 @@ interface UsageStats {
   period: string;
 }
 
-// Mock data
-const mockProviders: ModelProvider[] = [
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    status: "connected",
-    apiKeySet: true,
-    baseUrl: "https://api.anthropic.com",
-    models: [
-      {
-        id: "claude-sonnet-4-20250514",
-        name: "Claude Sonnet 4",
-        reasoning: true,
-        inputTypes: ["text", "image"],
-        contextWindow: 200000,
-        maxTokens: 64000,
-        cost: { input: 3, output: 15 },
-      },
-      {
-        id: "claude-3-5-sonnet-20241022",
-        name: "Claude 3.5 Sonnet",
-        reasoning: false,
-        inputTypes: ["text", "image"],
-        contextWindow: 200000,
-        maxTokens: 8192,
-        cost: { input: 3, output: 15 },
-      },
-      {
-        id: "claude-3-5-haiku-20241022",
-        name: "Claude 3.5 Haiku",
-        reasoning: false,
-        inputTypes: ["text", "image"],
-        contextWindow: 200000,
-        maxTokens: 8192,
-        cost: { input: 0.8, output: 4 },
-      },
-    ],
-    lastChecked: "2024-01-15T14:30:00Z",
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    status: "connected",
-    apiKeySet: true,
-    baseUrl: "https://api.openai.com/v1",
-    models: [
-      {
-        id: "gpt-4o",
-        name: "GPT-4o",
-        reasoning: false,
-        inputTypes: ["text", "image"],
-        contextWindow: 128000,
-        maxTokens: 16384,
-        cost: { input: 2.5, output: 10 },
-      },
-      {
-        id: "gpt-4o-mini",
-        name: "GPT-4o Mini",
-        reasoning: false,
-        inputTypes: ["text", "image"],
-        contextWindow: 128000,
-        maxTokens: 16384,
-        cost: { input: 0.15, output: 0.6 },
-      },
-      {
-        id: "o1",
-        name: "o1",
-        reasoning: true,
-        inputTypes: ["text", "image"],
-        contextWindow: 200000,
-        maxTokens: 100000,
-        cost: { input: 15, output: 60 },
-      },
-    ],
-    lastChecked: "2024-01-15T14:30:00Z",
-  },
-  {
-    id: "google",
-    name: "Google AI",
-    status: "disconnected",
-    apiKeySet: false,
-    models: [],
-  },
-  {
-    id: "azure",
-    name: "Azure OpenAI",
-    status: "error",
-    apiKeySet: true,
-    baseUrl: "https://myresource.openai.azure.com",
-    models: [],
-    error: "Invalid API key or endpoint",
-    lastChecked: "2024-01-15T14:25:00Z",
-  },
-];
+// Transform API models to providers (grouped by provider)
+function transformModelsToProviders(apiModels: any[]): ModelProvider[] {
+  if (!Array.isArray(apiModels) || apiModels.length === 0) {
+    return [];
+  }
 
-const mockAliases: ModelAlias[] = [
-  { alias: "default", targetProvider: "anthropic", targetModel: "claude-sonnet-4-20250514" },
-  { alias: "fast", targetProvider: "anthropic", targetModel: "claude-3-5-haiku-20241022" },
-  { alias: "reasoning", targetProvider: "openai", targetModel: "o1" },
-];
+  const providerMap = new Map<string, ModelProvider>();
 
-const mockUsage: UsageStats[] = [
-  {
-    provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
-    requests: 15234,
-    inputTokens: 45000000,
-    outputTokens: 12000000,
-    cost: 315.0,
-    period: "Jan 2024",
-  },
-  {
-    provider: "anthropic",
-    model: "claude-3-5-haiku-20241022",
-    requests: 8521,
-    inputTokens: 25000000,
-    outputTokens: 8000000,
-    cost: 52.0,
-    period: "Jan 2024",
-  },
-  {
-    provider: "openai",
-    model: "gpt-4o",
-    requests: 3245,
-    inputTokens: 10000000,
-    outputTokens: 3000000,
-    cost: 55.0,
-    period: "Jan 2024",
-  },
-];
+  for (const model of apiModels) {
+    const providerId = model.provider || "unknown";
+
+    if (!providerMap.has(providerId)) {
+      providerMap.set(providerId, {
+        id: providerId,
+        name: providerId.charAt(0).toUpperCase() + providerId.slice(1),
+        status: model.enabled ? "connected" : "disconnected",
+        apiKeySet: model.enabled,
+        models: [],
+      });
+    }
+
+    const provider = providerMap.get(providerId)!;
+    provider.models.push({
+      id: model.id,
+      name: model.name,
+      reasoning: false,
+      inputTypes: ["text"],
+      contextWindow: 128000,
+      maxTokens: 4096,
+      cost: { input: 0, output: 0 },
+    });
+  }
+
+  return Array.from(providerMap.values());
+}
 
 // Helper functions
 function getStatusBadge(status: ModelProvider["status"]) {
@@ -533,12 +440,26 @@ function AddProviderDialog({
 }
 
 export function Models() {
-  const [providers, setProviders] = useState<ModelProvider[]>(mockProviders);
-  const [aliases, setAliases] = useState<ModelAlias[]>(mockAliases);
+  const { data: modelsResponse, isLoading } = useQuery({
+    queryKey: ["org-models"],
+    queryFn: getModels,
+    staleTime: 30000,
+  });
+
+  // Transform API response to providers
+  const apiProviders = Array.isArray(modelsResponse?.data)
+    ? transformModelsToProviders(modelsResponse.data)
+    : [];
+
+  const [providers, setProviders] = useState<ModelProvider[]>([]);
+  const [aliases, setAliases] = useState<ModelAlias[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ModelProvider | null>(null);
   const [isAddProviderOpen, setIsAddProviderOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("providers");
-  const [defaultProvider, setDefaultProvider] = useState("anthropic");
+  const [defaultProvider, setDefaultProvider] = useState("");
+
+  // Update providers when API data loads
+  const displayProviders = providers.length > 0 ? providers : apiProviders;
 
   const handleSetDefault = useCallback((providerId: string) => {
     setDefaultProvider(providerId);
@@ -568,8 +489,10 @@ export function Models() {
     setProviders((prev) => [...prev, newProvider]);
   }, []);
 
-  const totalCost = mockUsage.reduce((acc, u) => acc + u.cost, 0);
-  const totalRequests = mockUsage.reduce((acc, u) => acc + u.requests, 0);
+  // Usage stats would come from a separate API - show empty for now
+  const usageStats: UsageStats[] = [];
+  const totalCost = usageStats.reduce((acc, u) => acc + u.cost, 0);
+  const totalRequests = usageStats.reduce((acc, u) => acc + u.requests, 0);
 
   if (selectedProvider) {
     return (
@@ -603,7 +526,7 @@ export function Models() {
             <CardDescription>Providers</CardDescription>
           </CardHeader>
           <CardContent>
-            <span className="text-2xl font-bold">{providers.length}</span>
+            <span className="text-2xl font-bold">{displayProviders.length}</span>
           </CardContent>
         </Card>
         <Card>
@@ -612,7 +535,7 @@ export function Models() {
           </CardHeader>
           <CardContent>
             <span className="text-2xl font-bold text-green-500">
-              {providers.filter((p) => p.status === "connected").length}
+              {displayProviders.filter((p) => p.status === "connected").length}
             </span>
           </CardContent>
         </Card>
@@ -642,17 +565,35 @@ export function Models() {
         </TabsList>
 
         <TabsContent value="providers" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {providers.map((provider) => (
-              <ProviderCard
-                key={provider.id}
-                provider={provider}
-                isDefault={provider.id === defaultProvider}
-                onConfigure={() => setSelectedProvider(provider)}
-                onSetDefault={() => handleSetDefault(provider.id)}
-              />
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : displayProviders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <Brain className="h-12 w-12 mb-4 opacity-50" />
+              <p className="font-medium">No providers configured</p>
+              <p className="text-sm mb-4">
+                Add an LLM provider to get started with AI capabilities.
+              </p>
+              <Button onClick={() => setIsAddProviderOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Provider
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {displayProviders.map((provider) => (
+                <ProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  isDefault={provider.id === defaultProvider}
+                  onConfigure={() => setSelectedProvider(provider)}
+                  onSetDefault={() => handleSetDefault(provider.id)}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="aliases" className="space-y-4">
@@ -664,39 +605,47 @@ export function Models() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Alias</TableHead>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {aliases.map((alias) => (
-                    <TableRow key={alias.alias}>
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono">
-                          {alias.alias}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{alias.targetProvider}</TableCell>
-                      <TableCell className="font-mono text-sm">{alias.targetModel}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="icon">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+              {aliases.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <Key className="h-8 w-8 mb-2 opacity-50" />
+                  <p className="text-sm">No aliases configured</p>
+                  <p className="text-xs">Create aliases to reference models by friendly names.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Alias</TableHead>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Model</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {aliases.map((alias) => (
+                      <TableRow key={alias.alias}>
+                        <TableCell>
+                          <Badge variant="outline" className="font-mono">
+                            {alias.alias}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{alias.targetProvider}</TableCell>
+                        <TableCell className="font-mono text-sm">{alias.targetModel}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="icon">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
             <CardFooter>
               <Button variant="outline">
@@ -714,49 +663,59 @@ export function Models() {
               <CardDescription>Token usage and costs by model (current month)</CardDescription>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead className="text-right">Requests</TableHead>
-                    <TableHead className="text-right">Input Tokens</TableHead>
-                    <TableHead className="text-right">Output Tokens</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mockUsage.map((usage, i) => (
-                    <TableRow key={i}>
-                      <TableCell>{usage.provider}</TableCell>
-                      <TableCell className="font-mono text-sm">{usage.model}</TableCell>
-                      <TableCell className="text-right">
-                        {usage.requests.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatTokens(usage.inputTokens)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatTokens(usage.outputTokens)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {formatCost(usage.cost)}
-                      </TableCell>
+              {usageStats.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <DollarSign className="h-8 w-8 mb-2 opacity-50" />
+                  <p className="text-sm">No usage data yet</p>
+                  <p className="text-xs">
+                    Usage statistics will appear here once you start using the models.
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provider</TableHead>
+                      <TableHead>Model</TableHead>
+                      <TableHead className="text-right">Requests</TableHead>
+                      <TableHead className="text-right">Input Tokens</TableHead>
+                      <TableHead className="text-right">Output Tokens</TableHead>
+                      <TableHead className="text-right">Cost</TableHead>
                     </TableRow>
-                  ))}
-                  <TableRow className="font-bold">
-                    <TableCell colSpan={2}>Total</TableCell>
-                    <TableCell className="text-right">{totalRequests.toLocaleString()}</TableCell>
-                    <TableCell className="text-right">
-                      {formatTokens(mockUsage.reduce((acc, u) => acc + u.inputTokens, 0))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatTokens(mockUsage.reduce((acc, u) => acc + u.outputTokens, 0))}
-                    </TableCell>
-                    <TableCell className="text-right">{formatCost(totalCost)}</TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {usageStats.map((usage, i) => (
+                      <TableRow key={i}>
+                        <TableCell>{usage.provider}</TableCell>
+                        <TableCell className="font-mono text-sm">{usage.model}</TableCell>
+                        <TableCell className="text-right">
+                          {usage.requests.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatTokens(usage.inputTokens)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatTokens(usage.outputTokens)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCost(usage.cost)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="font-bold">
+                      <TableCell colSpan={2}>Total</TableCell>
+                      <TableCell className="text-right">{totalRequests.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">
+                        {formatTokens(usageStats.reduce((acc, u) => acc + u.inputTokens, 0))}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatTokens(usageStats.reduce((acc, u) => acc + u.outputTokens, 0))}
+                      </TableCell>
+                      <TableCell className="text-right">{formatCost(totalCost)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -765,7 +724,7 @@ export function Models() {
       <AddProviderDialog
         open={isAddProviderOpen}
         onOpenChange={setIsAddProviderOpen}
-        existingProviders={providers.map((p) => p.id)}
+        existingProviders={displayProviders.map((p) => p.id)}
         onAdd={handleAddProvider}
       />
     </div>
