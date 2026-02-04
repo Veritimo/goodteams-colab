@@ -25,14 +25,24 @@ import {
   DEFAULT_USER_SCOPES,
 } from "../../auth/entra/index.js";
 import { prisma } from "../../db/client.js";
+import { refreshSession, getUserSessions, revokeSession } from "../../session/service.js";
 import { handleGoogleAuth } from "./google-auth.js";
+import {
+  createSessionAndSetCookies,
+  clearSessionCookies,
+  extractRefreshToken,
+  revokeAllSessionsAndClearCookies,
+} from "./session-utils.js";
+import { setSessionCookies } from "./session-utils.js";
 import { sendError, sendJson, parseBody, redirect } from "./utils.js";
 
 /**
  * Handle auth routes
  * Routes:
- * - GET /api/platform/auth/entra/consent - Initiate admin consent
- * - GET /api/platform/auth/entra/callback - Handle consent callback
+ * - GET /api/platform/auth/entra/consent - Initiate admin consent (requires auth)
+ * - GET /api/platform/auth/entra/callback - Handle consent callback (requires auth)
+ * - GET /api/platform/auth/entra/onboard - Initiate onboarding consent (no auth)
+ * - GET /api/platform/auth/entra/onboard/callback - Handle onboarding callback (no auth)
  * - GET /api/platform/auth/entra/login - Initiate user SSO
  * - GET /api/platform/auth/entra/login/callback - Handle SSO callback
  * - POST /api/platform/auth/logout - Clear session
@@ -60,7 +70,11 @@ export async function handleAuth(
   }
 
   // Route matching
-  if (subPath === "/entra/consent" && method === "GET") {
+  if (subPath === "/entra/onboard" && method === "GET") {
+    await handleOnboardingConsentInit(req, res);
+  } else if (subPath === "/entra/onboard/callback" && method === "GET") {
+    await handleOnboardingConsentCallback(req, res);
+  } else if (subPath === "/entra/consent" && method === "GET") {
     await handleConsentInit(req, res, ctx);
   } else if (subPath === "/entra/callback" && method === "GET") {
     await handleConsentCallback(req, res, ctx);
@@ -70,8 +84,14 @@ export async function handleAuth(
     await handleLoginCallback(req, res, ctx);
   } else if (subPath === "/logout" && method === "POST") {
     await handleLogout(req, res, ctx);
+  } else if (subPath === "/refresh" && method === "POST") {
+    await handleRefresh(req, res, ctx);
+  } else if (subPath === "/sessions" && method === "GET") {
+    await handleListSessions(req, res, ctx);
+  } else if (subPath.startsWith("/sessions/") && method === "DELETE") {
+    await handleRevokeSession(req, res, ctx);
   } else if (subPath === "/status" && method === "GET") {
-    handleStatus(req, res, ctx);
+    await handleStatus(req, res, ctx);
   } else {
     sendError(res, "NOT_FOUND", `Auth route not found: ${method} ${subPath}`);
   }
@@ -199,6 +219,172 @@ async function handleConsentCallback(
     console.error("Admin consent callback failed:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     redirect(res, `/settings/integrations?error=${encodeURIComponent(errorMessage)}`);
+  }
+}
+
+// =============================================================================
+// ONBOARDING CONSENT FLOW (NO AUTH REQUIRED)
+// =============================================================================
+
+// In-memory store for onboarding states (in production, use Redis or similar)
+const onboardingStates = new Map<string, { returnUrl?: string; createdAt: number }>();
+
+// Clean up expired states periodically (5 minute expiry)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of onboardingStates) {
+    if (now - value.createdAt > 5 * 60 * 1000) {
+      onboardingStates.delete(key);
+    }
+  }
+}, 60 * 1000);
+
+/**
+ * GET /api/platform/auth/entra/onboard
+ * Initiate admin consent for NEW organization onboarding.
+ * Does not require authentication.
+ */
+async function handleOnboardingConsentInit(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const baseUrl = process.env.APP_URL || `http://${req.headers.host}`;
+    const redirectUri = `${baseUrl}/api/platform/auth/entra/onboard/callback`;
+
+    // Get return URL
+    const returnUrl = url.searchParams.get("returnUrl") ?? "/onboarding/setup";
+
+    // Generate a random state for CSRF protection
+    const stateId = crypto.randomUUID();
+    onboardingStates.set(stateId, { returnUrl, createdAt: Date.now() });
+
+    // Build the admin consent URL manually for onboarding
+    const clientId = process.env.ENTRA_CLIENT_ID;
+    if (!clientId) {
+      sendError(res, "SERVICE_UNAVAILABLE", "Entra client ID not configured");
+      return;
+    }
+
+    const consentUrl = new URL("https://login.microsoftonline.com/organizations/adminconsent");
+    consentUrl.searchParams.set("client_id", clientId);
+    consentUrl.searchParams.set("redirect_uri", redirectUri);
+    consentUrl.searchParams.set("state", stateId);
+
+    // Redirect to Microsoft
+    redirect(res, consentUrl.toString());
+  } catch (error) {
+    console.error("Onboarding consent initiation failed:", error);
+    sendError(res, "INTERNAL_ERROR", "Failed to initiate onboarding");
+  }
+}
+
+/**
+ * GET /api/platform/auth/entra/onboard/callback
+ * Handle admin consent callback for NEW organization onboarding.
+ * Creates the organization and first admin user.
+ */
+async function handleOnboardingConsentCallback(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  try {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const stateId = url.searchParams.get("state");
+    const tenantId = url.searchParams.get("tenant");
+    const adminConsent = url.searchParams.get("admin_consent");
+    const error = url.searchParams.get("error");
+    const errorDescription = url.searchParams.get("error_description");
+
+    // Validate state
+    const stateData = stateId ? onboardingStates.get(stateId) : null;
+    if (!stateId || !stateData) {
+      redirect(res, "/onboarding/creating?error=invalid_state");
+      return;
+    }
+
+    // Clean up used state
+    onboardingStates.delete(stateId);
+
+    // Handle error from Microsoft
+    if (error) {
+      console.error("Onboarding consent failed:", error, errorDescription);
+      redirect(res, `/onboarding/creating?error=${encodeURIComponent(error)}`);
+      return;
+    }
+
+    // Validate consent was granted
+    if (adminConsent !== "True" || !tenantId) {
+      redirect(res, "/onboarding/creating?error=consent_denied");
+      return;
+    }
+
+    // Check if organization already exists for this tenant
+    const existingOrg = await prisma.organization.findFirst({
+      where: { externalTenantId: tenantId },
+    });
+
+    if (existingOrg) {
+      // Org already exists - redirect to login
+      redirect(res, "/login?message=organization_exists");
+      return;
+    }
+
+    // Fetch tenant info from Microsoft Graph to get org name
+    let orgName = "New Organization";
+    try {
+      // Note: We can't call Graph API here without a token
+      // The org name will be set during the setup wizard
+      // For now, use a placeholder
+    } catch {
+      // Ignore - use default name
+    }
+
+    // Create the organization
+    const organization = await prisma.organization.create({
+      data: {
+        name: orgName,
+        externalTenantId: tenantId,
+        status: "ACTIVE",
+      },
+    });
+
+    // Log audit event
+    await prisma.auditLog.create({
+      data: {
+        organizationId: organization.id,
+        actorId: "system",
+        actorRole: "ADMIN",
+        action: "organization.created",
+        targetType: "organization",
+        targetId: organization.id,
+        details: {
+          tenantId,
+          method: "onboarding",
+        },
+      },
+    });
+
+    // Redirect to setup wizard with org ID
+    // The user will complete SSO login as part of the setup
+    const setupUrl = new URL(
+      stateData.returnUrl || "/onboarding/setup",
+      `http://${req.headers.host}`,
+    );
+    setupUrl.searchParams.set("org", organization.id);
+    setupUrl.searchParams.set("tenant", tenantId);
+
+    // Redirect through login to establish session
+    const loginUrl = new URL("/api/platform/auth/entra/login", `http://${req.headers.host}`);
+    loginUrl.searchParams.set("org", organization.id);
+    loginUrl.searchParams.set("returnUrl", setupUrl.pathname + setupUrl.search);
+
+    redirect(res, loginUrl.toString());
+  } catch (error) {
+    console.error("Onboarding consent callback failed:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    redirect(res, `/onboarding/creating?error=${encodeURIComponent(errorMessage)}`);
   }
 }
 
@@ -340,6 +526,13 @@ async function handleLoginCallback(
       scopes: tokens.scopes,
     });
 
+    // Create session and set cookies
+    const sessionTokens = await createSessionAndSetCookies(res, user.id, {
+      organizationId: user.organizationId,
+      userAgent: req.headers["user-agent"] ?? undefined,
+      ipAddress: getClientIp(req) ?? undefined,
+    });
+
     // Log audit event
     if (user.organizationId) {
       await prisma.auditLog.create({
@@ -360,17 +553,6 @@ async function handleLoginCallback(
       });
     }
 
-    // Generate a stub-format token for API access
-    // This allows using the same auth middleware until proper JWT sessions are implemented
-    const tokenPayload = {
-      id: user.id,
-      email: user.email,
-      name: user.username || user.email.split("@")[0],
-      orgId: user.organizationId || "",
-      role: user.role.toLowerCase(),
-    };
-    const stubToken = `stub:${Buffer.from(JSON.stringify(tokenPayload)).toString("base64")}`;
-
     // Check if client wants JSON response (API client) or redirect (browser)
     const acceptHeader = req.headers.accept || "";
     if (acceptHeader.includes("application/json")) {
@@ -383,16 +565,17 @@ async function handleLoginCallback(
           role: user.role,
           organizationId: user.organizationId,
         },
-        token: stubToken,
-        message: "Login successful. Use the token in Authorization: Bearer <token> header.",
+        accessToken: sessionTokens.accessToken,
+        expiresAt: sessionTokens.accessTokenExpiresAt,
+        message: "Login successful. Tokens set in httpOnly cookies.",
       });
       return;
     }
 
-    // For browser: redirect with token in URL (temporary until UI is built)
+    // For browser: redirect (cookies are already set)
     const successUrl = stateData.returnUrl || "/";
     const separator = successUrl.includes("?") ? "&" : "?";
-    redirect(res, `${successUrl}${separator}token=${encodeURIComponent(stubToken)}&login=success`);
+    redirect(res, `${successUrl}${separator}login=success`);
   } catch (error) {
     console.error("User login callback failed:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -417,15 +600,24 @@ async function handleLogout(
     const url = new URL(req.url ?? "/", "http://localhost");
 
     if (!ctx.user) {
+      clearSessionCookies(res);
       sendJson(res, { success: true });
       return;
     }
 
-    // Remove stored tokens (gracefully handle stub auth users that don't exist in DB)
+    // Remove stored OAuth tokens (gracefully handle stub auth users that don't exist in DB)
     try {
       await removeUserTokens(ctx.user.id);
     } catch {
       // User may not exist in DB (stub auth) - that's fine
+    }
+
+    // Revoke all sessions for this user and clear cookies
+    try {
+      await revokeAllSessionsAndClearCookies(res, ctx.user.id, "user_logout");
+    } catch {
+      // Session may not exist - just clear cookies
+      clearSessionCookies(res);
     }
 
     // Log audit event (gracefully handle missing org for stub auth)
@@ -449,8 +641,6 @@ async function handleLogout(
       }
     }
 
-    // TODO: Clear session (Phase 2B)
-
     // If federated logout requested, return redirect URL
     if (url.searchParams.get("federated") === "true") {
       const postLogoutUrl = process.env.APP_URL || `http://${req.headers.host}`;
@@ -467,6 +657,121 @@ async function handleLogout(
 }
 
 // =============================================================================
+// TOKEN REFRESH
+// =============================================================================
+
+/**
+ * POST /api/platform/auth/refresh
+ * Refresh access token using refresh token from cookie.
+ */
+async function handleRefresh(
+  req: IncomingMessage,
+  res: ServerResponse,
+  _ctx: RequestContext,
+): Promise<void> {
+  try {
+    // Get refresh token from cookie
+    const refreshToken = extractRefreshToken(req.headers.cookie);
+    if (!refreshToken) {
+      sendError(res, "UNAUTHORIZED", "No refresh token provided");
+      return;
+    }
+
+    // Refresh the session
+    const tokens = await refreshSession(refreshToken, {
+      userAgent: req.headers["user-agent"] ?? undefined,
+      ipAddress: getClientIp(req) ?? undefined,
+    });
+
+    // Set new cookies
+    setSessionCookies(res, tokens);
+
+    sendJson(res, {
+      success: true,
+      accessToken: tokens.accessToken,
+      expiresAt: tokens.accessTokenExpiresAt,
+    });
+  } catch (error) {
+    console.error("Token refresh failed:", error);
+    clearSessionCookies(res);
+
+    if (error instanceof Error && error.message.includes("expired")) {
+      sendError(res, "UNAUTHORIZED", "Session expired, please login again");
+      return;
+    }
+
+    sendError(res, "UNAUTHORIZED", "Failed to refresh session");
+  }
+}
+
+// =============================================================================
+// SESSION MANAGEMENT
+// =============================================================================
+
+/**
+ * GET /api/platform/auth/sessions
+ * List all active sessions for the current user.
+ */
+async function handleListSessions(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: RequestContext,
+): Promise<void> {
+  if (!ctx.user) {
+    sendError(res, "UNAUTHORIZED", "Authentication required");
+    return;
+  }
+
+  try {
+    const sessions = await getUserSessions(ctx.user.id);
+    sendJson(res, {
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        createdAt: s.createdAt.toISOString(),
+        lastUsedAt: s.lastUsedAt.toISOString(),
+        expiresAt: s.expiresAt.toISOString(),
+        userAgent: s.userAgent,
+        ipAddress: s.ipAddress,
+      })),
+    });
+  } catch (error) {
+    console.error("List sessions failed:", error);
+    sendError(res, "INTERNAL_ERROR", "Failed to list sessions");
+  }
+}
+
+/**
+ * DELETE /api/platform/auth/sessions/:id
+ * Revoke a specific session.
+ */
+async function handleRevokeSession(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: RequestContext,
+): Promise<void> {
+  if (!ctx.user) {
+    sendError(res, "UNAUTHORIZED", "Authentication required");
+    return;
+  }
+
+  try {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const sessionId = url.pathname.split("/").pop();
+
+    if (!sessionId) {
+      sendError(res, "BAD_REQUEST", "Session ID required");
+      return;
+    }
+
+    await revokeSession(sessionId, "user_revoked");
+    sendJson(res, { success: true });
+  } catch (error) {
+    console.error("Revoke session failed:", error);
+    sendError(res, "INTERNAL_ERROR", "Failed to revoke session");
+  }
+}
+
+// =============================================================================
 // STATUS
 // =============================================================================
 
@@ -474,9 +779,14 @@ async function handleLogout(
  * GET /api/platform/auth/status
  * Get current authentication status.
  */
-function handleStatus(_req: IncomingMessage, res: ServerResponse, ctx: RequestContext): void {
+async function handleStatus(
+  _req: IncomingMessage,
+  res: ServerResponse,
+  ctx: RequestContext,
+): Promise<void> {
   sendJson(res, {
     authenticated: !!ctx.user,
+    tokenExpired: ctx.tokenExpired ?? false,
     user: ctx.user
       ? {
           id: ctx.user.id,

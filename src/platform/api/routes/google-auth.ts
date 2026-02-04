@@ -20,6 +20,7 @@ import {
   GOOGLE_SCOPES,
   storeUserGoogleTokens,
 } from "../../integrations/google/auth/index.js";
+import { createSessionAndSetCookies } from "./session-utils.js";
 import { sendJson, sendError, type RouteHandler } from "./utils.js";
 
 // Helper to redirect
@@ -184,6 +185,13 @@ async function handleGoogleCallback(
     // Store Google tokens using the proper token store
     await storeUserGoogleTokens(user.id, tokens, userInfo);
 
+    // Create session and set cookies
+    const sessionTokens = await createSessionAndSetCookies(res, user.id, {
+      organizationId: user.organizationId,
+      userAgent: req.headers["user-agent"] ?? undefined,
+      ipAddress: getClientIp(req),
+    });
+
     // Log audit event
     if (user.organizationId) {
       try {
@@ -205,16 +213,6 @@ async function handleGoogleCallback(
       }
     }
 
-    // Generate stub token for API access
-    const tokenPayload = {
-      id: user.id,
-      email: user.email,
-      name: user.username || user.email.split("@")[0],
-      orgId: user.organizationId || "",
-      role: user.role.toLowerCase(),
-    };
-    const stubToken = `stub:${Buffer.from(JSON.stringify(tokenPayload)).toString("base64")}`;
-
     // Check if client wants JSON
     const acceptHeader = req.headers.accept || "";
     if (acceptHeader.includes("application/json")) {
@@ -226,18 +224,17 @@ async function handleGoogleCallback(
           name: user.username,
           role: user.role,
         },
-        token: stubToken,
+        accessToken: sessionTokens.accessToken,
+        expiresAt: sessionTokens.accessTokenExpiresAt,
+        message: "Login successful. Tokens set in httpOnly cookies.",
       });
       return;
     }
 
-    // Redirect with token
+    // Redirect (cookies are already set)
     const successUrl = stateData.returnUrl || "/";
     const separator = successUrl.includes("?") ? "&" : "?";
-    redirect(
-      res,
-      `${successUrl}${separator}token=${encodeURIComponent(stubToken)}&login=success&provider=google`,
-    );
+    redirect(res, `${successUrl}${separator}login=success&provider=google`);
   } catch (error) {
     console.error("Google callback failed:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

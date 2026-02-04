@@ -2,11 +2,12 @@
  * Request context middleware for platform API
  *
  * Extracts user identity, tenant context, and adds request tracing.
- * JWT verification is stubbed for Phase 1; full implementation in Phase 2.
+ * Supports both JWT authentication and legacy stub tokens for backward compatibility.
  */
 
 import type { IncomingMessage } from "node:http";
 import { randomUUID } from "node:crypto";
+import { verifyAccessToken, JwtError } from "../../session/jwt.js";
 
 /**
  * User identity extracted from JWT
@@ -38,6 +39,8 @@ export interface RequestContext {
   user: RequestUser | null;
   tenant: TenantContext | null;
   ip: string;
+  /** Whether the access token is expired (client should refresh) */
+  tokenExpired?: boolean;
 }
 
 /**
@@ -58,63 +61,106 @@ function extractClientIp(req: IncomingMessage, trustedProxies: string[] = []): s
 }
 
 /**
- * Extract JWT from Authorization header
+ * Extract JWT from Authorization header or cookies
  */
 function extractJwt(req: IncomingMessage): string | null {
+  // Try Authorization header first
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
+  if (authHeader?.startsWith("Bearer ")) {
+    return authHeader.slice(7);
   }
-  return authHeader.slice(7);
+
+  // Try cookie (gt_access)
+  const cookies = req.headers.cookie;
+  if (cookies) {
+    const match = cookies.match(/gt_access=([^;]+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Map UserRole enum to legacy role format
+ */
+function mapRole(role: string): RequestUser["role"] {
+  switch (role.toUpperCase()) {
+    case "SUPER_ADMIN":
+      return "owner";
+    case "ADMIN":
+      return "admin";
+    case "USER":
+      return "member";
+    case "BILLING":
+      return "viewer";
+    case "VIEWER":
+      return "viewer";
+    default:
+      return "viewer";
+  }
 }
 
 /**
  * Verify and decode JWT token
  *
- * STUB: For development/testing, accepts a base64-encoded JSON user object.
- * Production implementation will verify against Entra SSO.
- *
- * Format for testing: base64(JSON.stringify({ id, email, name, orgId, role, permissions }))
+ * Supports:
+ * 1. Proper JWTs signed with JWT_SECRET (new system)
+ * 2. Legacy stub tokens for backward compatibility (stub:base64...)
  */
-function verifyJwt(token: string): RequestUser | null {
-  // TODO Phase 2: Implement full JWT verification with Entra SSO
-  // - Verify signature against Entra public keys
-  // - Check expiration and audience
-  // - Extract user claims
-
-  // STUB: For development/testing, accept base64-encoded JSON
-  // This allows testing without a real JWT infrastructure
-  try {
-    // Check if token looks like a base64 JSON stub (starts with "stub:")
-    if (token.startsWith("stub:")) {
+async function verifyJwt(token: string): Promise<{ user: RequestUser | null; expired: boolean }> {
+  // Handle legacy stub format for backward compatibility
+  if (token.startsWith("stub:")) {
+    try {
       const jsonPart = token.slice(5);
       const decoded = Buffer.from(jsonPart, "base64").toString("utf8");
       const payload = JSON.parse(decoded) as Partial<RequestUser>;
 
-      // Validate required fields
       if (
         typeof payload.id !== "string" ||
         typeof payload.email !== "string" ||
         typeof payload.orgId !== "string" ||
         typeof payload.role !== "string"
       ) {
-        return null;
+        return { user: null, expired: false };
       }
 
       return {
-        id: payload.id,
-        email: payload.email,
-        name: payload.name ?? payload.email.split("@")[0],
-        orgId: payload.orgId,
-        role: payload.role as RequestUser["role"],
-        permissions: payload.permissions ?? [],
+        user: {
+          id: payload.id,
+          email: payload.email,
+          name: payload.name ?? payload.email.split("@")[0],
+          orgId: payload.orgId,
+          role: payload.role as RequestUser["role"],
+          permissions: payload.permissions ?? [],
+        },
+        expired: false,
       };
+    } catch {
+      return { user: null, expired: false };
     }
+  }
 
-    // Future: Real JWT verification would go here
-    return null;
-  } catch {
-    return null;
+  // Verify proper JWT
+  try {
+    const payload = await verifyAccessToken(token);
+    return {
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        name: payload.email.split("@")[0],
+        orgId: payload.orgId ?? "",
+        role: mapRole(payload.role),
+        permissions: [],
+      },
+      expired: false,
+    };
+  } catch (error) {
+    if (error instanceof JwtError && error.code === "EXPIRED") {
+      return { user: null, expired: true };
+    }
+    return { user: null, expired: false };
   }
 }
 
@@ -123,7 +169,10 @@ function verifyJwt(token: string): RequestUser | null {
  *
  * STUB: Returns null for Phase 1. Full tenant resolution in Phase 3.
  */
-function extractTenantContext(_req: IncomingMessage, _user: RequestUser | null): TenantContext | null {
+function extractTenantContext(
+  _req: IncomingMessage,
+  _user: RequestUser | null,
+): TenantContext | null {
   // TODO Phase 3: Implement tenant resolution
   // - From subdomain (tenant.goodteams.ai)
   // - From X-Tenant-Id header
@@ -133,14 +182,17 @@ function extractTenantContext(_req: IncomingMessage, _user: RequestUser | null):
 
 /**
  * Create request context from incoming HTTP request
+ *
+ * Note: This is async to support JWT verification.
+ * For performance, consider caching verified tokens.
  */
-export function createRequestContext(
+export async function createRequestContext(
   req: IncomingMessage,
   opts: { trustedProxies?: string[] } = {},
-): RequestContext {
+): Promise<RequestContext> {
   const requestId = (req.headers["x-request-id"] as string) ?? randomUUID();
   const jwt = extractJwt(req);
-  const user = jwt ? verifyJwt(jwt) : null;
+  const { user, expired } = jwt ? await verifyJwt(jwt) : { user: null, expired: false };
   const tenant = extractTenantContext(req, user);
   const ip = extractClientIp(req, opts.trustedProxies);
 
@@ -150,13 +202,16 @@ export function createRequestContext(
     user,
     tenant,
     ip,
+    tokenExpired: expired,
   };
 }
 
 /**
  * Type guard to check if user is authenticated
  */
-export function isAuthenticated(ctx: RequestContext): ctx is RequestContext & { user: RequestUser } {
+export function isAuthenticated(
+  ctx: RequestContext,
+): ctx is RequestContext & { user: RequestUser } {
   return ctx.user !== null;
 }
 

@@ -27,6 +27,41 @@ export type { RequestContext, PlatformErrorCode, PlatformErrorResponse } from ".
 // Auth (stub for Phase 2)
 export { AUTH_MODULE_VERSION } from "./auth/index.js";
 
+// Session (Phase 2B - JWT session management)
+export {
+  SESSION_MODULE_VERSION,
+  // Types
+  type AccessTokenPayload,
+  type RefreshTokenPayload,
+  type SessionConfig,
+  type CreateSessionInput,
+  type TokenPair,
+  type SessionInfo,
+  type AuthenticatedUser,
+  type SessionErrorCode,
+  SessionError,
+  DEFAULT_SESSION_CONFIG,
+  // JWT utilities
+  signAccessToken,
+  verifyAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  hashToken,
+  decodeToken,
+  isTokenExpired,
+  JwtError,
+  type JwtErrorCode,
+  // Session service
+  getSessionConfig,
+  createSession,
+  refreshSession,
+  revokeSession,
+  revokeAllUserSessions,
+  getUserSessions,
+  getSession,
+  cleanupExpiredSessions,
+} from "./session/index.js";
+
 // Audit
 export {
   AUDIT_MODULE_VERSION,

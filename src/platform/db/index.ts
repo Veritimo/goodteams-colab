@@ -16,6 +16,7 @@ export {
   OrgStatus,
   type Organization,
   type User,
+  type Session,
   type OrganizationInvitation,
   type UserPermission,
   type OrganizationSkill,

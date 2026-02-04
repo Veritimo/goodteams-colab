@@ -130,8 +130,8 @@ export function createPlatformApiHandler(
       return true;
     }
 
-    // Create request context
-    const ctx = createRequestContext(req, { trustedProxies: opts.trustedProxies });
+    // Create request context (async for JWT verification)
+    const ctx = await createRequestContext(req, { trustedProxies: opts.trustedProxies });
 
     // Add request ID to response headers for tracing
     res.setHeader("X-Request-Id", ctx.requestId);

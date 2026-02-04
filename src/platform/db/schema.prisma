@@ -78,6 +78,9 @@ model User {
   // OAuth tokens
   tokens UserToken[]
 
+  // Platform sessions
+  sessions Session[]
+
   @@index([organizationId])
   @@index([externalId])
   @@index([email])
@@ -109,6 +112,38 @@ model UserToken {
   @@index([userId])
   @@index([provider])
   @@index([expiresAt])
+}
+
+// =============================================================================
+// SESSION (Platform Auth)
+// =============================================================================
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Refresh token (hashed, not stored raw)
+  refreshTokenHash String   @unique
+  
+  // Token metadata
+  expiresAt        DateTime  // Refresh token expiry (sliding or fixed)
+  absoluteExpiresAt DateTime // Hard limit, no extensions past this
+  
+  // Session info
+  userAgent     String?
+  ipAddress     String?
+  lastUsedAt    DateTime @default(now())
+  
+  // Revocation
+  revokedAt     DateTime?
+  revokedReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([refreshTokenHash])
 }
 
 // =============================================================================
@@ -303,6 +338,13 @@ model TenantConfig {
   maxTokensPerDay       Int @default(50000)
   maxConcurrentSessions Int @default(5)
   maxMemoryMb           Int @default(256)
+
+  // Session configuration (org-configurable)
+  sessionAccessTokenTtlMinutes  Int @default(15)      // Access token lifetime
+  sessionRefreshTokenTtlDays    Int @default(14)      // Refresh token lifetime
+  sessionAbsoluteMaxDays        Int @default(30)      // Force re-auth after this
+  sessionSlidingWindow          Boolean @default(true) // Extend refresh on use
+  sessionMaxConcurrent          Int @default(10)       // Max sessions per user
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
